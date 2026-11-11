@@ -1,8 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { auth, db } from './firebase';
 import {
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
+  sendPasswordResetEmail,
   signOut,
   onAuthStateChanged,
   updateProfile
@@ -12,18 +13,24 @@ import {
   addDoc,
   getDocs,
   updateDoc,
+  setDoc,
+  getDoc,
   doc,
   query,
   where
 } from 'firebase/firestore';
 import {
-  BookOpen, Clock, Upload, Download, FileUp, LogOut, Key
+  BookOpen, Clock, Upload, Download, FileUp, LogOut, Key,
+  FolderKanban, Sparkles, ShieldQuestion, Filter, Layers, CheckCircle2
 } from 'lucide-react';
 
 const SAMPLE_QUESTIONS = [
   {
     id: 1,
     qNum: 1,
+    subject: "Quantitative Aptitude",
+    chapter: "Simple & Compound Interest",
+    topic: "Rate of Simple Interest",
     question: "If a sum of ₹12,500 amounts to ₹15,500 in 4 years at the rate of simple interest, what is the rate of interest per annum?",
     options: ["5%", "6%", "6.5%", "7.5%"],
     correctIndex: 1,
@@ -32,6 +39,9 @@ const SAMPLE_QUESTIONS = [
   {
     id: 2,
     qNum: 2,
+    subject: "General Awareness",
+    chapter: "Indian Polity",
+    topic: "Constitutional Bodies (CAG)",
     question: "Under which Article of the Indian Constitution is the Comptroller and Auditor General (CAG) of India appointed?",
     options: ["Article 148", "Article 149", "Article 150", "Article 151"],
     correctIndex: 0,
@@ -40,6 +50,9 @@ const SAMPLE_QUESTIONS = [
   {
     id: 3,
     qNum: 3,
+    subject: "Computer Knowledge",
+    chapter: "Networking & Internet",
+    topic: "OSI Model Layers",
     question: "In Computer Networking, which layer of the OSI model is responsible for end-to-end error recovery and flow control?",
     options: ["Network Layer", "Data Link Layer", "Transport Layer", "Session Layer"],
     correctIndex: 2,
@@ -48,6 +61,9 @@ const SAMPLE_QUESTIONS = [
   {
     id: 4,
     qNum: 4,
+    subject: "English Comprehension",
+    chapter: "Vocabulary",
+    topic: "Antonyms & Synonyms",
     question: "Choose the word that is opposite in meaning (Antonym) to 'PERSPICACIOUS':",
     options: ["Astute", "Obtuse", "Shrewd", "Discerning"],
     correctIndex: 1,
@@ -56,6 +72,9 @@ const SAMPLE_QUESTIONS = [
   {
     id: 5,
     qNum: 5,
+    subject: "Quantitative Aptitude",
+    chapter: "Algebra",
+    topic: "Cubic Identities",
     question: "If x + (1/x) = 4, find the value of x³ + (1/x³).",
     options: ["52", "64", "48", "56"],
     correctIndex: 0,
@@ -66,11 +85,18 @@ const SAMPLE_QUESTIONS = [
 export default function App() {
   const [user, setUser] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
-  const [authMode, setAuthMode] = useState('login');
+  const [authMode, setAuthMode] = useState('login'); // 'login' | 'signup' | 'forgot'
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [displayName, setDisplayName] = useState('');
+  const [targetExam, setTargetExam] = useState('SSC CGL Mains (AAO / GST Inspector)');
+  const [securityQuestion, setSecurityQuestion] = useState('Mera favourite exam subject ya book kaunsi hai?');
+  const [customSecQ, setCustomSecQ] = useState('');
+  const [securityAnswer, setSecurityAnswer] = useState('');
+  const [recoveryPin, setRecoveryPin] = useState('');
   const [authError, setAuthError] = useState('');
+  const [authSuccess, setAuthSuccess] = useState('');
+  const [recoveredPassBox, setRecoveredPassBox] = useState('');
 
   const [geminiKey, setGeminiKey] = useState(() => localStorage.getItem('gemini_api_key') || '');
   const [showKeyModal, setShowKeyModal] = useState(false);
@@ -102,6 +128,11 @@ export default function App() {
   const [selectedAttempt, setSelectedAttempt] = useState(null);
   const [filterMode, setFilterMode] = useState('all');
   const [noteInput, setNoteInput] = useState({});
+
+  // Vault Chapter & Topic Filters
+  const [selectedSubjectFilter, setSelectedSubjectFilter] = useState('All');
+  const [selectedChapterFilter, setSelectedChapterFilter] = useState('All');
+  const [vaultViewMode, setVaultViewMode] = useState('chapters'); // 'chapters' | 'tests'
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (currentUser) => {
@@ -142,21 +173,117 @@ export default function App() {
     }
   };
 
+  const formatUserEmail = (input) => {
+    const clean = input.trim().toLowerCase();
+    return clean.includes('@') ? clean : `${clean}@mockportal.app`;
+  };
+
   const handleAuth = async (e) => {
     e.preventDefault();
     setAuthError('');
+    setAuthSuccess('');
+    setRecoveredPassBox('');
+
+    const formattedEmail = formatUserEmail(email);
+
     try {
-      const formattedEmail = email.includes('@') ? email.trim() : `${email.trim().toLowerCase()}@mockportal.app`;
       if (authMode === 'signup') {
+        const finalSecQuestion = securityQuestion === 'custom' ? customSecQ.trim() : securityQuestion;
+        if (!securityAnswer.trim()) {
+          setAuthError('Kripya Forgot Password recovery ke liye apna Secret Answer zaroor likhein.');
+          return;
+        }
         const res = await createUserWithEmailAndPassword(auth, formattedEmail, password);
         if (displayName) {
           await updateProfile(res.user, { displayName });
         }
-      } else {
+
+        const profileData = {
+          uid: res.user.uid,
+          displayName: displayName || email.trim(),
+          email: formattedEmail,
+          rawUsername: email.trim().toLowerCase(),
+          targetExam,
+          securityQuestion: finalSecQuestion || 'Security Question',
+          securityAnswer: securityAnswer.trim().toLowerCase(),
+          recoveryPin: recoveryPin.trim(),
+          savedPassHint: password,
+          createdAt: Date.now()
+        };
+
+        // Save recovery profile in both Firestore and LocalStorage for instant Forgot Password recovery
+        localStorage.setItem(`recovery_${formattedEmail}`, JSON.stringify(profileData));
+        try {
+          await setDoc(doc(db, 'userProfiles', formattedEmail), profileData);
+        } catch (err) {
+          console.log('Profile saved locally');
+        }
+        setEmail('');
+        setPassword('');
+      } else if (authMode === 'login') {
         await signInWithEmailAndPassword(auth, formattedEmail, password);
+        setEmail('');
+        setPassword('');
       }
-      setEmail('');
-      setPassword('');
+    } catch (err) {
+      setAuthError(err.message);
+    }
+  };
+
+  // Instant Password Recovery via Secret Answer/PIN OR Firebase Reset Email
+  const handleForgotPassword = async (e) => {
+    e.preventDefault();
+    setAuthError('');
+    setAuthSuccess('');
+    setRecoveredPassBox('');
+
+    if (!email.trim()) {
+      setAuthError('Kripya pehle apna Username ya Email dalein.');
+      return;
+    }
+
+    const formattedEmail = formatUserEmail(email);
+    let profile = null;
+
+    try {
+      const snap = await getDoc(doc(db, 'userProfiles', formattedEmail));
+      if (snap.exists()) profile = snap.data();
+    } catch (err) {
+      // Fallback to local profile
+    }
+
+    if (!profile) {
+      const localProf = localStorage.getItem(`recovery_${formattedEmail}`);
+      if (localProf) profile = JSON.parse(localProf);
+    }
+
+    if (profile) {
+      const ansMatch = securityAnswer.trim().toLowerCase() === (profile.securityAnswer || '').toLowerCase();
+      const pinMatch = recoveryPin.trim() && recoveryPin.trim() === profile.recoveryPin;
+
+      if (ansMatch || pinMatch) {
+        setRecoveredPassBox(profile.savedPassHint || '');
+        setAuthSuccess(`✓ Identity Verified! Hello ${profile.displayName}, aapka password niche dikh raha hai. Ab aap Login kar sakte hain.`);
+        return;
+      } else {
+        setAuthError('Secret Answer ya Recovery PIN match nahi hua! Kripya sahi answer dalein ya niche Email Reset button dabayein.');
+        return;
+      }
+    } else {
+      setAuthError('Is username ka Secret Question record nahi mila. Agar aapne asli Gmail ID dali thi, toh niche "Send Reset Link to Email" button dabayein.');
+    }
+  };
+
+  const handleSendResetEmail = async () => {
+    setAuthError('');
+    setAuthSuccess('');
+    if (!email.trim() || !email.includes('@')) {
+      setAuthError('Email par link bhejne ke liye kripya apna pura Gmail address (e.g. name@gmail.com) likhein.');
+      return;
+    }
+    try {
+      await sendPasswordResetEmail(auth, email.trim());
+      setAuthSuccess(`✓ Password Reset Link aapke email (${email.trim()}) par bhej diya gaya hai! Apna Inbox/Spam folder check karein.`);
     } catch (err) {
       setAuthError(err.message);
     }
@@ -166,7 +293,7 @@ export default function App() {
     const file = e.target.files?.[0];
     if (!file) return;
     setMockTitle(file.name.replace('.pdf', ''));
-    setStatusMsg('PDF load ho raha hai (Vision Image Scanner Ready)...');
+    setStatusMsg('PDF load ho raha hai (AI Chapter & Topic Classifier Ready)...');
     try {
       const arrayBuffer = await file.arrayBuffer();
       setPdfBuffer(arrayBuffer);
@@ -183,7 +310,7 @@ export default function App() {
         extracted += `\n--- Page ${i} ---\n` + pageStr;
       }
       setRawText(extracted);
-      setStatusMsg(`✓ PDF Loaded (${pdf.numPages} Pages)! Niche PDF Page range check karein aur 'Generate Mock' dabayein.`);
+      setStatusMsg(`✓ PDF Loaded (${pdf.numPages} Pages)! AI apne aap har question ka Subject, Chapter aur Topic pehchan kar Mock banayega.`);
     } catch (err) {
       setStatusMsg('PDF read error: ' + err.message);
     }
@@ -196,7 +323,7 @@ export default function App() {
     const safeEnd = Math.min(pdf.numPages, toP, safeStart + 11);
 
     for (let p = safeStart; p <= safeEnd; p++) {
-      setStatusMsg(`Scanning PDF Page ${p} of ${safeEnd} (Vision OCR)...`);
+      setStatusMsg(`Scanning PDF Page ${p} of ${safeEnd} (AI Vision + Topic Classifier)...`);
       const page = await pdf.getPage(p);
       const viewport = page.getViewport({ scale: 1.4 });
       const canvas = document.createElement('canvas');
@@ -215,7 +342,6 @@ export default function App() {
     return imgs;
   };
 
-  // Supports both AQ.Ab8... (Auth Keys) and AIzaSy... (Standard Keys) across all Gemini endpoints
   const callGeminiWithAnyKey = async (cleanKey, modelName, parts) => {
     const payload = JSON.stringify({
       contents: [{ parts }],
@@ -223,7 +349,6 @@ export default function App() {
     });
 
     const attempts = [
-      // Method 1: x-goog-api-key header (Recommended for AQ. auth keys & AIza keys)
       {
         url: `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent`,
         headers: {
@@ -231,7 +356,6 @@ export default function App() {
           'x-goog-api-key': cleanKey
         }
       },
-      // Method 2: Authorization Bearer token (Fallback for AQ. OAuth/Auth keys)
       {
         url: `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent`,
         headers: {
@@ -239,7 +363,6 @@ export default function App() {
           'Authorization': `Bearer ${cleanKey}`
         }
       },
-      // Method 3: URL query param
       {
         url: `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${encodeURIComponent(cleanKey)}`,
         headers: {
@@ -293,18 +416,26 @@ export default function App() {
         parts.push(...imageParts);
       }
 
-      setStatusMsg(`AI Vision Question ${startQ} se ${endQ} tak ke questions aur 4 options nikal raha hai...`);
+      setStatusMsg(`AI Vision Question ${startQ} se ${endQ} nikal raha hai aur Subject, Chapter & Topic classify kar raha hai...`);
 
-      const prompt = `You are an expert SSC CGL Mains exam parser. Look carefully at the attached PDF page images and/or text.
+      const prompt = `You are an expert SSC CGL Mains & Competitive Exam AI Professor. Look carefully at the attached PDF page images and/or text.
 Ignore coaching watermarks/headers like "Telegram YouTube Instagram App SSC PANACEA".
 Extract the multiple-choice questions from Question number ${startQ} to Question number ${endQ} (or all questions visible on these scanned pages).
 
+Automatically analyze each question and classify it into:
+1. "subject": Choose one standard exam subject ("Quantitative Aptitude", "Reasoning & General Intelligence", "English Comprehension", "General Awareness", "Computer Knowledge", or "Economics & Finance").
+2. "chapter": The exact syllabus chapter name (e.g., "Percentage", "Profit & Loss", "Geometry", "Indian Polity", "Modern History", "Macroeconomics", "Grammar - Error Spotting", "Networking", etc.).
+3. "topic": The specific micro-topic or concept tested (e.g., "Successive Discount", "Article 148 CAG", "Five Year Plans", "OSI Model Layer 4", etc.).
+
 Return ONLY a valid JSON array of objects with these exact keys:
 - "qNum": number
+- "subject": string
+- "chapter": string
+- "topic": string
 - "question": string (the complete question statement without watermarks)
 - "options": array of 4 strings (the 4 options A, B, C, D)
 - "correctIndex": number (0 for A, 1 for B, 2 for C, 3 for D - solve accurately)
-- "explanation": string (detailed step-by-step solution in Hinglish/English)
+- "explanation": string (detailed step-by-step solution + shortcut trick in Hinglish/English)
 
 Additional Text:
 ${rawText.slice(0, 15000)}`;
@@ -328,7 +459,13 @@ ${rawText.slice(0, 15000)}`;
             const cleanJson = result.text.replace(/```json|```/g, '').trim();
             const parsed = JSON.parse(cleanJson);
             if (Array.isArray(parsed) && parsed.length > 0) {
-              parsedQuestions = parsed;
+              parsedQuestions = parsed.map((q, idx) => ({
+                ...q,
+                qNum: q.qNum || startQ + idx,
+                subject: q.subject || 'General Practice',
+                chapter: q.chapter || 'Mixed Chapter',
+                topic: q.topic || 'Core Concept'
+              }));
               break;
             }
           } catch (e) {
@@ -340,6 +477,12 @@ ${rawText.slice(0, 15000)}`;
       }
 
       if (parsedQuestions && parsedQuestions.length > 0) {
+        // Automatically detect dominant Subject & Chapter to enrich Mock Title if default
+        const mainSub = parsedQuestions[0]?.subject || '';
+        const mainChap = parsedQuestions[0]?.chapter || '';
+        if (mockTitle === 'Mains Practice Set - 1' && mainChap) {
+          setMockTitle(`${mainSub}: ${mainChap} (Q.${startQ}-${endQ})`);
+        }
         startMockWithQuestions(parsedQuestions);
       } else {
         alert(`Questions extract nahi ho paye.\nServer Message: ${lastError}`);
@@ -368,7 +511,15 @@ ${rawText.slice(0, 15000)}`;
     let wrong = 0;
     let unattempted = 0;
 
+    const subjectsSet = new Set();
+    const chaptersSet = new Set();
+    const topicsSet = new Set();
+
     activeQuestions.forEach((q, idx) => {
+      if (q.subject) subjectsSet.add(q.subject);
+      if (q.chapter) chaptersSet.add(q.chapter);
+      if (q.topic) topicsSet.add(q.topic);
+
       const ans = userAnswers[idx];
       if (ans === undefined) unattempted++;
       else if (ans === q.correctIndex) correct++;
@@ -378,11 +529,19 @@ ${rawText.slice(0, 15000)}`;
     const totalScore = (correct * positiveMarks) - (wrong * negativeMarks);
     const maxScore = activeQuestions.length * positiveMarks;
 
+    const primarySubject = [...subjectsSet][0] || 'Mixed Subject';
+    const primaryChapter = [...chaptersSet][0] || 'Mixed Chapter';
+
     const attemptRecord = {
       uid: user?.uid || 'guest',
       userEmail: user?.email || 'guest',
-      title: mockTitle || `Mock (${startQ}-${endQ})`,
+      title: mockTitle || `${primaryChapter} (Q.${startQ}-${endQ})`,
       qRange: `Q.${startQ} - Q.${endQ}`,
+      primarySubject,
+      primaryChapter,
+      subjectsList: [...subjectsSet],
+      chaptersList: [...chaptersSet],
+      topicsList: [...topicsSet],
       dateStr: new Date().toLocaleString('en-IN'),
       timestamp: Date.now(),
       durationMins,
@@ -479,6 +638,61 @@ ${rawText.slice(0, 15000)}`;
     }
   };
 
+  // Automatic AI Chapter-Wise & Topic-Wise Aggregation across all saved Mocks
+  const chapterWiseStats = useMemo(() => {
+    const map = {};
+    savedAttempts.forEach((att) => {
+      (att.questions || []).forEach((q, idx) => {
+        const sub = q.subject || att.primarySubject || 'General Studies';
+        const chap = q.chapter || att.primaryChapter || 'Mixed Practice';
+        const top = q.topic || 'Standard Concept';
+        const key = `${sub}___${chap}`;
+
+        if (!map[key]) {
+          map[key] = {
+            subject: sub,
+            chapter: chap,
+            totalQs: 0,
+            correct: 0,
+            wrong: 0,
+            skipped: 0,
+            topicsMap: {},
+            allQuestions: [],
+            mistakeQuestions: []
+          };
+        }
+
+        const uAns = att.userAnswers?.[idx];
+        const isCorr = uAns === q.correctIndex;
+        const isSkip = uAns === undefined;
+
+        map[key].totalQs += 1;
+        if (isCorr) map[key].correct += 1;
+        else if (isSkip) map[key].skipped += 1;
+        else map[key].wrong += 1;
+
+        map[key].allQuestions.push(q);
+        if (!isCorr) map[key].mistakeQuestions.push(q);
+
+        if (!map[key].topicsMap[top]) {
+          map[key].topicsMap[top] = { topic: top, total: 0, correct: 0, wrong: 0, questions: [] };
+        }
+        map[key].topicsMap[top].total += 1;
+        if (isCorr) map[key].topicsMap[top].correct += 1;
+        else map[key].topicsMap[top].wrong += 1;
+        map[key].topicsMap[top].questions.push(q);
+      });
+    });
+
+    return Object.values(map).sort((a, b) => b.totalQs - a.totalQs);
+  }, [savedAttempts]);
+
+  const allSubjectsList = useMemo(() => {
+    const s = new Set(['All']);
+    chapterWiseStats.forEach(item => s.add(item.subject));
+    return [...s];
+  }, [chapterWiseStats]);
+
   const exportBackupJSON = () => {
     const blob = new Blob([JSON.stringify(savedAttempts, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
@@ -522,28 +736,37 @@ ${rawText.slice(0, 15000)}`;
     return (
       <div className="min-h-screen bg-slate-950 flex items-center justify-center p-4">
         <div className="max-w-md w-full bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-2xl">
-          <div className="flex items-center gap-3 mb-6">
+          <div className="flex items-center gap-3 mb-5">
             <div className="p-3 rounded-xl bg-indigo-600/20 text-indigo-400">
               <BookOpen className="w-7 h-7" />
             </div>
             <div>
-              <h1 className="text-xl font-bold text-white">Mains Mock & Revision Portal</h1>
-              <p className="text-xs text-slate-400">Multi-User Cloud Login (Firebase Connected)</p>
+              <h1 className="text-xl font-bold text-white">Mains Mock & AI Topic Portal</h1>
+              <p className="text-xs text-slate-400">Cloud Login + Smart Password Recovery</p>
             </div>
           </div>
 
-          <div className="flex gap-2 mb-6 bg-slate-950 p-1 rounded-xl border border-slate-800">
+          <div className="grid grid-cols-3 gap-1.5 mb-5 bg-slate-950 p-1 rounded-xl border border-slate-800">
             <button
-              onClick={() => setAuthMode('login')}
-              className={`flex-1 py-2 rounded-lg text-sm font-semibold transition ${authMode === 'login' ? 'bg-indigo-600 text-white' : 'text-slate-400'}`}
+              type="button"
+              onClick={() => { setAuthMode('login'); setAuthError(''); setAuthSuccess(''); }}
+              className={`py-2 rounded-lg text-xs font-semibold transition ${authMode === 'login' ? 'bg-indigo-600 text-white' : 'text-slate-400'}`}
             >
               Login
             </button>
             <button
-              onClick={() => setAuthMode('signup')}
-              className={`flex-1 py-2 rounded-lg text-sm font-semibold transition ${authMode === 'signup' ? 'bg-indigo-600 text-white' : 'text-slate-400'}`}
+              type="button"
+              onClick={() => { setAuthMode('signup'); setAuthError(''); setAuthSuccess(''); }}
+              className={`py-2 rounded-lg text-xs font-semibold transition ${authMode === 'signup' ? 'bg-indigo-600 text-white' : 'text-slate-400'}`}
             >
-              New Student Sign Up
+              New Registration
+            </button>
+            <button
+              type="button"
+              onClick={() => { setAuthMode('forgot'); setAuthError(''); setAuthSuccess(''); }}
+              className={`py-2 rounded-lg text-xs font-semibold transition ${authMode === 'forgot' ? 'bg-amber-600 text-white' : 'text-amber-400/80'}`}
+            >
+              Forgot Password?
             </button>
           </div>
 
@@ -553,50 +776,205 @@ ${rawText.slice(0, 15000)}`;
             </div>
           )}
 
-          <form onSubmit={handleAuth} className="space-y-4">
-            {authMode === 'signup' && (
+          {authSuccess && (
+            <div className="mb-4 p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-xs space-y-2">
+              <p>{authSuccess}</p>
+              {recoveredPassBox && (
+                <div className="p-2.5 rounded-lg bg-slate-950 border border-emerald-500/40 text-center">
+                  <span className="text-slate-400 text-[11px] block">Aapka Saved Password:</span>
+                  <span className="text-base font-mono font-bold text-amber-300">{recoveredPassBox}</span>
+                </div>
+              )}
+            </div>
+          )}
+
+          {authMode === 'forgot' ? (
+            <form onSubmit={handleForgotPassword} className="space-y-3.5">
               <div>
-                <label className="block text-xs text-slate-400 mb-1">Student Full Name</label>
+                <label className="block text-xs text-slate-400 mb-1">Apna Username ya Email Dalein</label>
                 <input
                   type="text"
                   required
-                  placeholder="e.g. Rohit Kumar"
-                  value={displayName}
-                  onChange={(e) => setDisplayName(e.target.value)}
+                  placeholder="e.g. rohit01 or rohit@gmail.com"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
                   className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-white text-sm"
                 />
               </div>
-            )}
-            <div>
-              <label className="block text-xs text-slate-400 mb-1">Username or Email</label>
-              <input
-                type="text"
-                required
-                placeholder="e.g. rohit@gmail.com or rohit01"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-white text-sm"
-              />
-            </div>
-            <div>
-              <label className="block text-xs text-slate-400 mb-1">Password (min 6 characters)</label>
-              <input
-                type="password"
-                required
-                minLength={6}
-                placeholder="••••••"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-white text-sm"
-              />
-            </div>
-            <button
-              type="submit"
-              className="w-full py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-sm transition"
-            >
-              {authMode === 'login' ? 'Login to My Workspace' : 'Create My Account'}
-            </button>
-          </form>
+
+              <div className="p-3.5 rounded-xl bg-slate-950/90 border border-slate-800 space-y-3">
+                <div className="flex items-center gap-2 text-amber-400 text-xs font-semibold">
+                  <ShieldQuestion className="w-4 h-4" />
+                  <span>Option 1: Registration Secret Answer se Turant Dekhein</span>
+                </div>
+                <div>
+                  <label className="block text-[11px] text-slate-400 mb-1">Aapka Secret Answer (Jo Registration me dala tha)</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Maths / Blackbook / Chintu"
+                    value={securityAnswer}
+                    onChange={(e) => setSecurityAnswer(e.target.value)}
+                    className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-800 text-white text-xs"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] text-slate-400 mb-1">Ya 4-Digit Recovery PIN (Agar set kiya tha)</label>
+                  <input
+                    type="text"
+                    placeholder="Optional 4-digit PIN (e.g. 2001)"
+                    value={recoveryPin}
+                    onChange={(e) => setRecoveryPin(e.target.value)}
+                    className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-800 text-white text-xs"
+                  />
+                </div>
+                <button
+                  type="submit"
+                  className="w-full py-2.5 rounded-xl bg-amber-600 hover:bg-amber-500 text-white font-semibold text-xs transition"
+                >
+                  Recover My Password Instantly
+                </button>
+              </div>
+
+              <div className="text-center pt-1">
+                <button
+                  type="button"
+                  onClick={handleSendResetEmail}
+                  className="w-full py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-indigo-300 font-semibold text-xs transition"
+                >
+                  Option 2: Send Password Reset Link to Gmail
+                </button>
+              </div>
+            </form>
+          ) : (
+            <form onSubmit={handleAuth} className="space-y-3.5">
+              {authMode === 'signup' && (
+                <>
+                  <div>
+                    <label className="block text-xs text-slate-400 mb-1">Student Full Name *</label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="e.g. Rohit Kumar Wasnik"
+                      value={displayName}
+                      onChange={(e) => setDisplayName(e.target.value)}
+                      className="w-full px-3.5 py-2 rounded-xl bg-slate-950 border border-slate-800 text-white text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-slate-400 mb-1">Target Exam (Apne According Set Karein)</label>
+                    <input
+                      type="text"
+                      value={targetExam}
+                      onChange={(e) => setTargetExam(e.target.value)}
+                      placeholder="e.g. SSC CGL AAO / DSSSB ASO"
+                      className="w-full px-3.5 py-2 rounded-xl bg-slate-950 border border-slate-800 text-indigo-300 text-xs"
+                    />
+                  </div>
+                </>
+              )}
+
+              <div>
+                <label className="block text-xs text-slate-400 mb-1">Username or Email *</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. rohit@gmail.com or rohit01"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  className="w-full px-3.5 py-2 rounded-xl bg-slate-950 border border-slate-800 text-white text-sm"
+                />
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-xs text-slate-400">Password (min 6 chars) *</label>
+                  {authMode === 'login' && (
+                    <button
+                      type="button"
+                      onClick={() => setAuthMode('forgot')}
+                      className="text-[11px] text-amber-400 hover:underline"
+                    >
+                      Forgot Password?
+                    </button>
+                  )}
+                </div>
+                <input
+                  type="password"
+                  required
+                  minLength={6}
+                  placeholder="••••••"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="w-full px-3.5 py-2 rounded-xl bg-slate-950 border border-slate-800 text-white text-sm"
+                />
+              </div>
+
+              {authMode === 'signup' && (
+                <div className="p-3.5 rounded-xl bg-slate-950 border border-indigo-500/30 space-y-2.5">
+                  <div className="text-xs font-semibold text-amber-400 flex items-center gap-1.5">
+                    <ShieldQuestion className="w-4 h-4" />
+                    <span>Password Recovery Setup (Apne According)</span>
+                  </div>
+                  <div>
+                    <label className="block text-[11px] text-slate-400 mb-1">Select or Write Your Security Question</label>
+                    <select
+                      value={securityQuestion}
+                      onChange={(e) => setSecurityQuestion(e.target.value)}
+                      className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-800 text-xs text-white"
+                    >
+                      <option value="Mera favourite exam subject ya book kaunsi hai?">Mera favourite exam subject ya book kaunsi hai?</option>
+                      <option value="Mera bachpan ka nickname kya hai?">Mera bachpan ka nickname kya hai?</option>
+                      <option value="Mera pehla school ya college kaunsa tha?">Mera pehla school ya college kaunsa tha?</option>
+                      <option value="Meri dream post kaunsi hai?">Meri dream post kaunsi hai?</option>
+                      <option value="custom">+ Main khud apna Security Question likhunga...</option>
+                    </select>
+                  </div>
+
+                  {securityQuestion === 'custom' && (
+                    <input
+                      type="text"
+                      required
+                      placeholder="Apna khud ka Security Question yahan likhein..."
+                      value={customSecQ}
+                      onChange={(e) => setCustomSecQ(e.target.value)}
+                      className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-xs text-white"
+                    />
+                  )}
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-[11px] text-slate-400 mb-1">Secret Answer *</label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="e.g. AAO / Blackbook"
+                        value={securityAnswer}
+                        onChange={(e) => setSecurityAnswer(e.target.value)}
+                        className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-800 text-xs text-white"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] text-slate-400 mb-1">Recovery PIN (Optional)</label>
+                      <input
+                        type="text"
+                        placeholder="e.g. 0412"
+                        value={recoveryPin}
+                        onChange={(e) => setRecoveryPin(e.target.value)}
+                        className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-800 text-xs text-white"
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <button
+                type="submit"
+                className="w-full py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-sm transition"
+              >
+                {authMode === 'login' ? 'Login to My Workspace' : 'Complete Registration & Login'}
+              </button>
+            </form>
+          )}
         </div>
       </div>
     );
@@ -611,12 +989,12 @@ ${rawText.slice(0, 15000)}`;
               <BookOpen className="w-6 h-6" />
             </div>
             <div>
-              <h1 className="font-bold text-white text-base">Mains PDF to Mock Portal</h1>
-              <p className="text-xs text-emerald-400">Logged in: {user.displayName || user.email}</p>
+              <h1 className="font-bold text-white text-base">Mains AI Chapter & Topic Mock Portal</h1>
+              <p className="text-xs text-emerald-400">Student: {user.displayName || user.email}</p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <button
               onClick={() => setActiveTab('create')}
               className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition ${activeTab === 'create' ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-slate-300'}`}
@@ -625,9 +1003,10 @@ ${rawText.slice(0, 15000)}`;
             </button>
             <button
               onClick={() => setActiveTab('vault')}
-              className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition ${activeTab === 'vault' ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-slate-300'}`}
+              className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition flex items-center gap-1.5 ${activeTab === 'vault' ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-slate-300'}`}
             >
-              Revision Vault ({savedAttempts.length})
+              <FolderKanban className="w-3.5 h-3.5" />
+              AI Chapter & Topic Vault ({savedAttempts.length})
             </button>
             <button
               onClick={() => setShowKeyModal(true)}
@@ -684,23 +1063,30 @@ ${rawText.slice(0, 15000)}`;
         {activeTab === 'create' && (
           <div className="grid md:grid-cols-3 gap-6">
             <div className="md:col-span-2 bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-4">
-              <div className="flex items-center justify-between">
-                <h2 className="text-lg font-bold text-white">1. Upload Mains PDF (Scanned or Text)</h2>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <h2 className="text-lg font-bold text-white flex items-center gap-2">
+                    <span>1. Upload Mains PDF</span>
+                    <span className="px-2.5 py-0.5 rounded-full bg-indigo-500/20 border border-indigo-500/30 text-indigo-300 text-[11px] flex items-center gap-1">
+                      <Sparkles className="w-3 h-3" /> Auto Chapter & Topic Tagging
+                    </span>
+                  </h2>
+                </div>
                 <button
                   onClick={() => {
-                    setMockTitle('SSC CGL Mains Demo Test (Q.1 - Q.5)');
+                    setMockTitle('SSC CGL Mains Demo (Auto Topic Tagged)');
                     startMockWithQuestions(SAMPLE_QUESTIONS);
                   }}
                   className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold"
                 >
-                  ▶ Run Instant Demo Mock (5 Qs)
+                  ▶ Run Topic-Wise Demo Mock (5 Qs)
                 </button>
               </div>
 
               <label className="border-2 border-dashed border-slate-700 hover:border-indigo-500 rounded-2xl p-6 flex flex-col items-center justify-center cursor-pointer bg-slate-950/50 transition">
                 <Upload className="w-8 h-8 text-indigo-400 mb-2" />
                 <span className="text-sm font-medium text-slate-200">Click to Upload Question Bank PDF</span>
-                <span className="text-xs text-emerald-400 mt-1">✓ Supports `AQ.Ab8...` Auth Keys + Scanned Coaching PDFs</span>
+                <span className="text-xs text-emerald-400 mt-1">✓ AI automatically detects Subject, Chapter & Micro-Topic for every question</span>
                 <input type="file" accept="application/pdf" onChange={handlePdfUpload} className="hidden" />
               </label>
 
@@ -747,7 +1133,7 @@ ${rawText.slice(0, 15000)}`;
                   rows={5}
                   value={rawText}
                   onChange={(e) => setRawText(e.target.value)}
-                  placeholder="Agar bina PDF ke seedha text copy-paste karna ho to yahan dalein..."
+                  placeholder="Agar bina PDF ke seedha text copy-paste karna ho to yahan dalein... AI uska bhi Chapter aur Topic khud bana dega!"
                   className="w-full p-3 rounded-xl bg-slate-950 border border-slate-800 text-xs text-slate-200"
                 />
               </div>
@@ -756,7 +1142,7 @@ ${rawText.slice(0, 15000)}`;
             <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-4">
               <h2 className="text-lg font-bold text-white">2. Custom Mock Settings</h2>
               <div>
-                <label className="block text-xs text-slate-400 mb-1">Mock Test Name</label>
+                <label className="block text-xs text-slate-400 mb-1">Mock Test Name (AI Auto-Updates if Default)</label>
                 <input
                   type="text"
                   value={mockTitle}
@@ -827,7 +1213,7 @@ ${rawText.slice(0, 15000)}`;
                 onClick={generateMockFromText}
                 className="w-full py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white font-bold text-sm transition"
               >
-                {isGenerating ? 'Scanning PDF Pages...' : `Generate Mock (Q.${startQ} to Q.${endQ})`}
+                {isGenerating ? 'AI Scanning & Classifying Topics...' : `Generate Smart Mock (Q.${startQ} - Q.${endQ})`}
               </button>
             </div>
           </div>
@@ -837,12 +1223,29 @@ ${rawText.slice(0, 15000)}`;
           <div className="grid md:grid-cols-4 gap-6">
             <div className="md:col-span-3 bg-slate-900 border border-slate-800 rounded-2xl p-6 flex flex-col justify-between">
               <div>
-                <div className="flex items-center justify-between border-b border-slate-800 pb-4 mb-5">
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 pb-4 mb-5">
                   <div>
                     <span className="text-xs text-indigo-400 font-semibold">{mockTitle}</span>
                     <h3 className="text-lg font-bold text-white">
                       Question {currentIdx + 1} of {activeQuestions.length} (PDF Q.{activeQuestions[currentIdx].qNum || currentIdx + 1})
                     </h3>
+                    <div className="flex flex-wrap gap-1.5 mt-2">
+                      {activeQuestions[currentIdx].subject && (
+                        <span className="px-2.5 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 text-[11px] font-semibold">
+                          {activeQuestions[currentIdx].subject}
+                        </span>
+                      )}
+                      {activeQuestions[currentIdx].chapter && (
+                        <span className="px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 text-[11px] font-semibold">
+                          Chapter: {activeQuestions[currentIdx].chapter}
+                        </span>
+                      )}
+                      {activeQuestions[currentIdx].topic && (
+                        <span className="px-2.5 py-0.5 rounded-full bg-amber-500/20 text-amber-300 text-[11px] font-semibold">
+                          Topic: {activeQuestions[currentIdx].topic}
+                        </span>
+                      )}
+                    </div>
                   </div>
                   <div className="px-4 py-2 rounded-xl bg-slate-950 border border-slate-800 flex items-center gap-2 text-amber-400 font-mono font-bold">
                     <Clock className="w-4 h-4" />
@@ -958,88 +1361,251 @@ ${rawText.slice(0, 15000)}`;
         )}
 
         {activeTab === 'vault' && (
-          <div className="space-y-4">
+          <div className="space-y-5">
             <div className="flex flex-wrap items-center justify-between gap-3 bg-slate-900 border border-slate-800 p-4 rounded-2xl">
               <div>
-                <h2 className="text-lg font-bold text-white">Permanent Cloud Revision Vault</h2>
-                <p className="text-xs text-slate-400">Har mock test aapke personal account me hamesha ke liye save rehta hai.</p>
+                <h2 className="text-lg font-bold text-white flex items-center gap-2">
+                  <Layers className="w-5 h-5 text-indigo-400" />
+                  <span>AI Automatic Chapter-Wise & Topic-Wise Manager</span>
+                </h2>
+                <p className="text-xs text-slate-400">
+                  AI aapke har mock test ke questions ko Subject, Chapter aur Topic ke hisab se automatically organize karta hai.
+                </p>
               </div>
-              <div className="flex gap-2">
+              <div className="flex flex-wrap gap-2">
+                <button
+                  onClick={() => setVaultViewMode('chapters')}
+                  className={`px-3 py-2 rounded-xl text-xs font-semibold transition ${
+                    vaultViewMode === 'chapters' ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-slate-300'
+                  }`}
+                >
+                  📚 Chapter & Topic Wise View
+                </button>
+                <button
+                  onClick={() => setVaultViewMode('tests')}
+                  className={`px-3 py-2 rounded-xl text-xs font-semibold transition ${
+                    vaultViewMode === 'tests' ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-slate-300'
+                  }`}
+                >
+                  📝 All Mock Tests ({savedAttempts.length})
+                </button>
                 <button
                   onClick={exportBackupJSON}
                   className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-semibold flex items-center gap-1.5"
                 >
-                  <Download className="w-4 h-4" /> Export Backup
+                  <Download className="w-4 h-4" /> Export
                 </button>
                 <label className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-semibold flex items-center gap-1.5 cursor-pointer">
-                  <FileUp className="w-4 h-4" /> Restore Backup
+                  <FileUp className="w-4 h-4" /> Restore
                   <input type="file" accept=".json" onChange={importBackupJSON} className="hidden" />
                 </label>
               </div>
             </div>
 
+            {/* Subject Filter Bar */}
+            {allSubjectsList.length > 1 && (
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-xs text-slate-400 flex items-center gap-1 mr-1">
+                  <Filter className="w-3.5 h-3.5 text-indigo-400" /> Filter Subject:
+                </span>
+                {allSubjectsList.map((sub) => (
+                  <button
+                    key={sub}
+                    onClick={() => {
+                      setSelectedSubjectFilter(sub);
+                      setSelectedChapterFilter('All');
+                    }}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition ${
+                      selectedSubjectFilter === sub
+                        ? 'bg-indigo-600 text-white'
+                        : 'bg-slate-900 border border-slate-800 text-slate-300 hover:border-slate-700'
+                    }`}
+                  >
+                    {sub}
+                  </button>
+                ))}
+              </div>
+            )}
+
             {savedAttempts.length === 0 ? (
               <div className="bg-slate-900 border border-slate-800 rounded-2xl p-10 text-center text-slate-400">
                 Abhi tak koi mock test save nahi hua hai. "+ Create Mock" me jakar apna pehla test dein!
               </div>
+            ) : vaultViewMode === 'chapters' ? (
+              <div className="grid md:grid-cols-2 gap-4">
+                {chapterWiseStats
+                  .filter(item => selectedSubjectFilter === 'All' || item.subject === selectedSubjectFilter)
+                  .map((chapItem, cIdx) => {
+                    const accuracy = chapItem.totalQs > 0
+                      ? Math.round((chapItem.correct / chapItem.totalQs) * 100)
+                      : 0;
+                    const topicsArr = Object.values(chapItem.topicsMap);
+
+                    return (
+                      <div key={cIdx} className="bg-slate-900 border border-slate-800 rounded-2xl p-5 flex flex-col justify-between gap-4">
+                        <div>
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="px-2.5 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 text-[11px] font-semibold">
+                              {chapItem.subject}
+                            </span>
+                            <span className={`text-xs font-bold px-2.5 py-0.5 rounded-full ${
+                              accuracy >= 75 ? 'bg-emerald-500/20 text-emerald-300' : accuracy >= 50 ? 'bg-amber-500/20 text-amber-300' : 'bg-rose-500/20 text-rose-300'
+                            }`}>
+                              Accuracy: {accuracy}%
+                            </span>
+                          </div>
+
+                          <h3 className="text-base font-bold text-white mt-2">
+                            Chapter: {chapItem.chapter}
+                          </h3>
+
+                          <div className="grid grid-cols-4 gap-2 mt-3 text-center">
+                            <div className="p-2 rounded-xl bg-slate-950 border border-slate-800">
+                              <div className="text-[11px] text-slate-400">Total Qs</div>
+                              <div className="text-sm font-bold text-white">{chapItem.totalQs}</div>
+                            </div>
+                            <div className="p-2 rounded-xl bg-emerald-500/10 border border-emerald-500/20">
+                              <div className="text-[11px] text-emerald-400">Correct</div>
+                              <div className="text-sm font-bold text-emerald-300">{chapItem.correct}</div>
+                            </div>
+                            <div className="p-2 rounded-xl bg-rose-500/10 border border-rose-500/20">
+                              <div className="text-[11px] text-rose-400">Wrong</div>
+                              <div className="text-sm font-bold text-rose-300">{chapItem.wrong}</div>
+                            </div>
+                            <div className="p-2 rounded-xl bg-slate-950 border border-slate-800">
+                              <div className="text-[11px] text-slate-400">Skipped</div>
+                              <div className="text-sm font-bold text-slate-300">{chapItem.skipped}</div>
+                            </div>
+                          </div>
+
+                          {/* Topic-Wise Breakdown Pills inside Chapter */}
+                          <div className="mt-4">
+                            <div className="text-xs font-semibold text-slate-400 mb-2">
+                              📌 AI Topic-Wise Breakdown ({topicsArr.length} Topics):
+                            </div>
+                            <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1">
+                              {topicsArr.map((tObj, tIdx) => (
+                                <div
+                                  key={tIdx}
+                                  className="flex items-center justify-between px-3 py-1.5 rounded-xl bg-slate-950 border border-slate-800 text-xs"
+                                >
+                                  <span className="text-slate-200 font-medium truncate pr-2">
+                                    • {tObj.topic}
+                                  </span>
+                                  <div className="flex items-center gap-2 shrink-0">
+                                    <span className="text-emerald-400">{tObj.correct}✓</span>
+                                    <span className="text-rose-400">{tObj.wrong}✗</span>
+                                    <button
+                                      onClick={() => {
+                                        setMockTitle(`${chapItem.chapter} - ${tObj.topic}`);
+                                        startMockWithQuestions(tObj.questions);
+                                      }}
+                                      className="px-2 py-0.5 rounded bg-indigo-600/30 hover:bg-indigo-600 text-indigo-200 text-[10px] font-semibold"
+                                    >
+                                      Practice Topic
+                                    </button>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="flex gap-2 pt-2 border-t border-slate-800">
+                          <button
+                            onClick={() => {
+                              setMockTitle(`${chapItem.subject}: ${chapItem.chapter} (Full Chapter Practice)`);
+                              startMockWithQuestions(chapItem.allQuestions);
+                            }}
+                            className="flex-1 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold"
+                          >
+                            Practice Full Chapter ({chapItem.totalQs} Qs)
+                          </button>
+                          {chapItem.mistakeQuestions.length > 0 && (
+                            <button
+                              onClick={() => {
+                                setMockTitle(`${chapItem.chapter} (Mistakes Retry)`);
+                                startMockWithQuestions(chapItem.mistakeQuestions);
+                              }}
+                              className="px-3 py-2 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 text-xs font-semibold"
+                            >
+                              Retry Mistakes ({chapItem.mistakeQuestions.length})
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+              </div>
             ) : (
               <div className="grid md:grid-cols-2 gap-4">
-                {savedAttempts.map((att, idx) => (
-                  <div key={idx} className="bg-slate-900 border border-slate-800 rounded-2xl p-5 flex flex-col justify-between gap-4">
-                    <div>
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs text-indigo-400 font-semibold">{att.qRange}</span>
-                        <span className="text-xs text-slate-500">{att.dateStr}</span>
-                      </div>
-                      <h3 className="text-base font-bold text-white mt-1">{att.title}</h3>
-                      <div className="grid grid-cols-4 gap-2 mt-4 text-center">
-                        <div className="p-2 rounded-xl bg-slate-950 border border-slate-800">
-                          <div className="text-xs text-slate-400">Score</div>
-                          <div className="text-sm font-bold text-white">{att.totalScore}/{att.maxScore}</div>
+                {savedAttempts
+                  .filter(att => selectedSubjectFilter === 'All' || (att.subjectsList || [att.primarySubject]).includes(selectedSubjectFilter))
+                  .map((att, idx) => (
+                    <div key={idx} className="bg-slate-900 border border-slate-800 rounded-2xl p-5 flex flex-col justify-between gap-4">
+                      <div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs text-indigo-400 font-semibold">{att.qRange}</span>
+                          <span className="text-xs text-slate-500">{att.dateStr}</span>
                         </div>
-                        <div className="p-2 rounded-xl bg-emerald-500/10 border border-emerald-500/20">
-                          <div className="text-xs text-emerald-400">Correct</div>
-                          <div className="text-sm font-bold text-emerald-300">{att.correct}</div>
-                        </div>
-                        <div className="p-2 rounded-xl bg-rose-500/10 border border-rose-500/20">
-                          <div className="text-xs text-rose-400">Wrong</div>
-                          <div className="text-sm font-bold text-rose-300">{att.wrong}</div>
-                        </div>
-                        <div className="p-2 rounded-xl bg-slate-950 border border-slate-800">
-                          <div className="text-xs text-slate-400">Skipped</div>
-                          <div className="text-sm font-bold text-slate-300">{att.unattempted}</div>
-                        </div>
-                      </div>
-                    </div>
+                        <h3 className="text-base font-bold text-white mt-1">{att.title}</h3>
 
-                    <div className="flex gap-2">
-                      <button
-                        onClick={() => {
-                          setSelectedAttempt(att);
-                          setFilterMode('all');
-                          setActiveTab('review');
-                        }}
-                        className="flex-1 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold"
-                      >
-                        Revise & See Mistakes
-                      </button>
-                      <button
-                        onClick={() => {
-                          const wrongQs = att.questions.filter((q, i) => att.userAnswers?.[i] !== q.correctIndex);
-                          if (wrongQs.length === 0) {
-                            alert("Sabhi answers sahi the!");
-                            return;
-                          }
-                          setMockTitle(`${att.title} (Mistakes Retry)`);
-                          startMockWithQuestions(wrongQs);
-                        }}
-                        className="px-3 py-2 rounded-xl bg-amber-500/20 text-amber-300 text-xs font-semibold"
-                      >
-                        Retry Mistakes
-                      </button>
+                        <div className="flex flex-wrap gap-1.5 mt-2">
+                          {(att.chaptersList || [att.primaryChapter]).filter(Boolean).slice(0, 4).map((ch, ci) => (
+                            <span key={ci} className="px-2 py-0.5 rounded-md bg-slate-950 border border-slate-800 text-[11px] text-emerald-300">
+                              #{ch}
+                            </span>
+                          ))}
+                        </div>
+
+                        <div className="grid grid-cols-4 gap-2 mt-4 text-center">
+                          <div className="p-2 rounded-xl bg-slate-950 border border-slate-800">
+                            <div className="text-xs text-slate-400">Score</div>
+                            <div className="text-sm font-bold text-white">{att.totalScore}/{att.maxScore}</div>
+                          </div>
+                          <div className="p-2 rounded-xl bg-emerald-500/10 border border-emerald-500/20">
+                            <div className="text-xs text-emerald-400">Correct</div>
+                            <div className="text-sm font-bold text-emerald-300">{att.correct}</div>
+                          </div>
+                          <div className="p-2 rounded-xl bg-rose-500/10 border border-rose-500/20">
+                            <div className="text-xs text-rose-400">Wrong</div>
+                            <div className="text-sm font-bold text-rose-300">{att.wrong}</div>
+                          </div>
+                          <div className="p-2 rounded-xl bg-slate-950 border border-slate-800">
+                            <div className="text-xs text-slate-400">Skipped</div>
+                            <div className="text-sm font-bold text-slate-300">{att.unattempted}</div>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => {
+                            setSelectedAttempt(att);
+                            setFilterMode('all');
+                            setActiveTab('review');
+                          }}
+                          className="flex-1 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold"
+                        >
+                          Revise & See Mistakes
+                        </button>
+                        <button
+                          onClick={() => {
+                            const wrongQs = att.questions.filter((q, i) => att.userAnswers?.[i] !== q.correctIndex);
+                            if (wrongQs.length === 0) {
+                              alert("Sabhi answers sahi the!");
+                              return;
+                            }
+                            setMockTitle(`${att.title} (Mistakes Retry)`);
+                            startMockWithQuestions(wrongQs);
+                          }}
+                          className="px-3 py-2 rounded-xl bg-amber-500/20 text-amber-300 text-xs font-semibold"
+                        >
+                          Retry Mistakes
+                        </button>
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  ))}
               </div>
             )}
           </div>
@@ -1049,7 +1615,7 @@ ${rawText.slice(0, 15000)}`;
           <div className="space-y-4">
             <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 flex flex-wrap items-center justify-between gap-4">
               <div>
-                <h2 className="text-lg font-bold text-white">{selectedAttempt.title} — Revision Sheet</h2>
+                <h2 className="text-lg font-bold text-white">{selectedAttempt.title} — AI Topic Revision Sheet</h2>
                 <p className="text-xs text-slate-400">
                   Score: <b className="text-white">{selectedAttempt.totalScore}/{selectedAttempt.maxScore}</b> | Correct: {selectedAttempt.correct} | Wrong: {selectedAttempt.wrong} | Skipped: {selectedAttempt.unattempted}
                 </p>
@@ -1082,8 +1648,25 @@ ${rawText.slice(0, 15000)}`;
 
                 return (
                   <div key={idx} className="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-3">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-bold text-indigo-400">Question {idx + 1} (PDF Q.{q.qNum || idx + 1})</span>
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-xs font-bold text-indigo-400">Question {idx + 1} (PDF Q.{q.qNum || idx + 1})</span>
+                        {q.subject && (
+                          <span className="px-2 py-0.5 rounded-md bg-indigo-500/15 text-indigo-300 text-[11px]">
+                            {q.subject}
+                          </span>
+                        )}
+                        {q.chapter && (
+                          <span className="px-2 py-0.5 rounded-md bg-emerald-500/15 text-emerald-300 text-[11px]">
+                            Chapter: {q.chapter}
+                          </span>
+                        )}
+                        {q.topic && (
+                          <span className="px-2 py-0.5 rounded-md bg-amber-500/15 text-amber-300 text-[11px]">
+                            Topic: {q.topic}
+                          </span>
+                        )}
+                      </div>
                       {isCorrect && <span className="px-2.5 py-1 rounded-full bg-emerald-500/20 text-emerald-300 text-xs font-bold">Correct ✓</span>}
                       {isWrong && <span className="px-2.5 py-1 rounded-full bg-rose-500/20 text-rose-300 text-xs font-bold">Wrong ✗</span>}
                       {isSkipped && <span className="px-2.5 py-1 rounded-full bg-slate-800 text-slate-300 text-xs font-bold">Skipped</span>}
