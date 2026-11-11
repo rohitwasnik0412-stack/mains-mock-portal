@@ -13,6 +13,7 @@ import {
   addDoc,
   getDocs,
   updateDoc,
+  deleteDoc,
   setDoc,
   getDoc,
   doc,
@@ -21,7 +22,7 @@ import {
 } from 'firebase/firestore';
 import {
   BookOpen, Clock, Upload, Download, FileUp, LogOut, Key,
-  FolderKanban, Sparkles, ShieldQuestion, Filter, Layers, CheckCircle2
+  FolderKanban, Sparkles, ShieldQuestion, Filter, Layers, RefreshCw, Trash2
 } from 'lucide-react';
 
 const SAMPLE_QUESTIONS = [
@@ -85,7 +86,7 @@ const SAMPLE_QUESTIONS = [
 export default function App() {
   const [user, setUser] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
-  const [authMode, setAuthMode] = useState('login'); // 'login' | 'signup' | 'forgot'
+  const [authMode, setAuthMode] = useState('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [displayName, setDisplayName] = useState('');
@@ -100,6 +101,7 @@ export default function App() {
 
   const [geminiKey, setGeminiKey] = useState(() => localStorage.getItem('gemini_api_key') || '');
   const [showKeyModal, setShowKeyModal] = useState(false);
+  const [cloudSyncStatus, setCloudSyncStatus] = useState('Checking Cloud Sync...');
 
   const [activeTab, setActiveTab] = useState('create');
   const [mockTitle, setMockTitle] = useState('Mains Practice Set - 1');
@@ -129,17 +131,15 @@ export default function App() {
   const [filterMode, setFilterMode] = useState('all');
   const [noteInput, setNoteInput] = useState({});
 
-  // Vault Chapter & Topic Filters
   const [selectedSubjectFilter, setSelectedSubjectFilter] = useState('All');
-  const [selectedChapterFilter, setSelectedChapterFilter] = useState('All');
-  const [vaultViewMode, setVaultViewMode] = useState('chapters'); // 'chapters' | 'tests'
+  const [vaultViewMode, setVaultViewMode] = useState('chapters');
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
       setAuthLoading(false);
       if (currentUser) {
-        loadUserAttempts(currentUser.uid);
+        syncAndLoadUserAttempts(currentUser);
       } else {
         setSavedAttempts([]);
       }
@@ -160,16 +160,66 @@ export default function App() {
     return () => clearInterval(timer);
   }, [testRunning, timeLeft]);
 
-  const loadUserAttempts = async (uid) => {
+  const syncAndLoadUserAttempts = async (currentUser) => {
+    const uid = currentUser.uid;
+    setCloudSyncStatus('Syncing across devices...');
+
+    try {
+      const keyDoc = await getDoc(doc(db, 'userSettings', uid));
+      if (keyDoc.exists() && keyDoc.data().geminiKey) {
+        const cloudKey = keyDoc.data().geminiKey;
+        setGeminiKey(cloudKey);
+        localStorage.setItem('gemini_api_key', cloudKey);
+      } else if (geminiKey) {
+        await setDoc(doc(db, 'userSettings', uid), { geminiKey }, { merge: true });
+      }
+    } catch (e) {
+      // Ignore settings error
+    }
+
+    const localRaw = localStorage.getItem(`attempts_${uid}`);
+    const localList = localRaw ? JSON.parse(localRaw) : [];
+
     try {
       const q = query(collection(db, 'mockAttempts'), where('uid', '==', uid));
       const snap = await getDocs(q);
-      const list = snap.docs.map(d => ({ docId: d.id, ...d.data() }));
-      list.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
-      setSavedAttempts(list);
+      const cloudList = snap.docs.map(d => ({ docId: d.id, ...d.data() }));
+
+      const cloudTimestamps = new Set(cloudList.map(item => item.timestamp));
+      const unsyncedLocal = localList.filter(item => item.timestamp && !cloudTimestamps.has(item.timestamp));
+
+      for (const localItem of unsyncedLocal) {
+        try {
+          const cleanItem = { ...localItem, uid };
+          delete cleanItem.docId;
+          const docRef = await addDoc(collection(db, 'mockAttempts'), cleanItem);
+          cloudList.push({ ...cleanItem, docId: docRef.id });
+        } catch (pushErr) {
+          console.error('Auto push error:', pushErr);
+        }
+      }
+
+      cloudList.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+      setSavedAttempts(cloudList);
+      localStorage.setItem(`attempts_${uid}`, JSON.stringify(cloudList));
+      setCloudSyncStatus('✓ Cloud Synced (Laptop + Mobile)');
     } catch (err) {
-      const localData = localStorage.getItem(`attempts_${uid}`);
-      if (localData) setSavedAttempts(JSON.parse(localData));
+      setSavedAttempts(localList);
+      setCloudSyncStatus('⚠️ Local Mode');
+    }
+  };
+
+  const handleDeleteAttempt = async (att) => {
+    if (!window.confirm(`Kya aap "${att.title}" mock test ko delete karna chahte hain?`)) return;
+    const updated = savedAttempts.filter(item => item.timestamp !== att.timestamp);
+    setSavedAttempts(updated);
+    if (user) localStorage.setItem(`attempts_${user.uid}`, JSON.stringify(updated));
+    if (att.docId) {
+      try {
+        await deleteDoc(doc(db, 'mockAttempts', att.docId));
+      } catch (e) {
+        console.error('Delete cloud error:', e);
+      }
     }
   };
 
@@ -211,7 +261,6 @@ export default function App() {
           createdAt: Date.now()
         };
 
-        // Save recovery profile in both Firestore and LocalStorage for instant Forgot Password recovery
         localStorage.setItem(`recovery_${formattedEmail}`, JSON.stringify(profileData));
         try {
           await setDoc(doc(db, 'userProfiles', formattedEmail), profileData);
@@ -230,7 +279,6 @@ export default function App() {
     }
   };
 
-  // Instant Password Recovery via Secret Answer/PIN OR Firebase Reset Email
   const handleForgotPassword = async (e) => {
     e.preventDefault();
     setAuthError('');
@@ -249,7 +297,7 @@ export default function App() {
       const snap = await getDoc(doc(db, 'userProfiles', formattedEmail));
       if (snap.exists()) profile = snap.data();
     } catch (err) {
-      // Fallback to local profile
+      // Fallback to local
     }
 
     if (!profile) {
@@ -343,6 +391,7 @@ export default function App() {
   };
 
   const callGeminiWithAnyKey = async (cleanKey, modelName, parts) => {
+    const cleanModel = modelName.replace(/^models\//, '');
     const payload = JSON.stringify({
       contents: [{ parts }],
       generationConfig: { responseMimeType: "application/json" }
@@ -350,21 +399,21 @@ export default function App() {
 
     const attempts = [
       {
-        url: `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent`,
+        url: `https://generativelanguage.googleapis.com/v1beta/models/${cleanModel}:generateContent`,
         headers: {
           'Content-Type': 'application/json',
           'x-goog-api-key': cleanKey
         }
       },
       {
-        url: `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent`,
+        url: `https://generativelanguage.googleapis.com/v1beta/models/${cleanModel}:generateContent`,
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${cleanKey}`
         }
       },
       {
-        url: `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${encodeURIComponent(cleanKey)}`,
+        url: `https://generativelanguage.googleapis.com/v1beta/models/${cleanModel}:generateContent?key=${encodeURIComponent(cleanKey)}`,
         headers: {
           'Content-Type': 'application/json'
         }
@@ -391,6 +440,25 @@ export default function App() {
       }
     }
     return { error: lastErr };
+  };
+
+  // Auto-discover available Gemini models directly from Google API so future model updates never break!
+  const fetchAvailableGeminiModels = async (cleanKey) => {
+    try {
+      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(cleanKey)}`, {
+        headers: { 'x-goog-api-key': cleanKey }
+      });
+      const data = await res.json();
+      if (Array.isArray(data.models)) {
+        return data.models
+          .filter(m => (m.supportedGenerationMethods || []).includes('generateContent'))
+          .map(m => m.name.replace(/^models\//, ''))
+          .filter(name => name.includes('gemini'));
+      }
+    } catch (e) {
+      // Fallback to static list
+    }
+    return [];
   };
 
   const generateMockFromText = async () => {
@@ -442,18 +510,28 @@ ${rawText.slice(0, 15000)}`;
 
       parts.push({ text: prompt });
 
-      const modelsToTry = [
+      // Priority model list including exact gemini-3.8-flash + live discovered models
+      const discovered = await fetchAvailableGeminiModels(cleanKey);
+      const priorityModels = [
+        'gemini-3.8-flash',
+        'gemini-3.8-flash-preview',
+        'gemini-3.5-flash',
         'gemini-3.0-flash',
-        'gemini-3-flash-preview',
+        'gemini-3-flash',
         'gemini-2.5-flash',
-        'gemini-2.0-flash'
+        'gemini-2.5-pro',
+        ...discovered
       ];
+      const uniqueModels = [...new Set(priorityModels)];
 
       let parsedQuestions = null;
       let lastError = '';
 
-      for (const modelName of modelsToTry) {
+      for (let i = 0; i < uniqueModels.length; i++) {
+        const modelName = uniqueModels[i];
+        setStatusMsg(`Connecting to AI Model (${modelName})...`);
         const result = await callGeminiWithAnyKey(cleanKey, modelName, parts);
+
         if (result.text) {
           try {
             const cleanJson = result.text.replace(/```json|```/g, '').trim();
@@ -471,13 +549,17 @@ ${rawText.slice(0, 15000)}`;
           } catch (e) {
             lastError = "JSON parse error: " + e.message;
           }
-        } else {
+        } else if (result.error) {
           lastError = result.error;
+          // Smart Auto-Read: If server error says "Please update your code to use models/xyz", extract "xyz" and run it immediately!
+          const suggestedMatch = result.error.match(/models\/([a-zA-Z0-9.-]+)/);
+          if (suggestedMatch && suggestedMatch[1] && !uniqueModels.includes(suggestedMatch[1])) {
+            uniqueModels.splice(i + 1, 0, suggestedMatch[1]);
+          }
         }
       }
 
       if (parsedQuestions && parsedQuestions.length > 0) {
-        // Automatically detect dominant Subject & Chapter to enrich Mock Title if default
         const mainSub = parsedQuestions[0]?.subject || '';
         const mainChap = parsedQuestions[0]?.chapter || '';
         if (mockTitle === 'Mains Practice Set - 1' && mainChap) {
@@ -561,6 +643,7 @@ ${rawText.slice(0, 15000)}`;
       if (user) {
         const docRef = await addDoc(collection(db, 'mockAttempts'), attemptRecord);
         attemptRecord.docId = docRef.id;
+        setCloudSyncStatus('✓ Cloud Synced (Laptop + Mobile)');
       }
     } catch (e) {
       console.error("Cloud save fallback to local:", e);
@@ -638,7 +721,6 @@ ${rawText.slice(0, 15000)}`;
     }
   };
 
-  // Automatic AI Chapter-Wise & Topic-Wise Aggregation across all saved Mocks
   const chapterWiseStats = useMemo(() => {
     const map = {};
     savedAttempts.forEach((att) => {
@@ -710,10 +792,22 @@ ${rawText.slice(0, 15000)}`;
       try {
         const imported = JSON.parse(ev.target.result);
         if (Array.isArray(imported)) {
-          const merged = [...imported, ...savedAttempts];
-          setSavedAttempts(merged);
-          if (user) localStorage.setItem(`attempts_${user.uid}`, JSON.stringify(merged));
-          alert(`Successfully restored ${imported.length} mock tests!`);
+          const existingTimestamps = new Set(savedAttempts.map(a => a.timestamp));
+          let addedCount = 0;
+          for (const item of imported) {
+            if (user && !existingTimestamps.has(item.timestamp)) {
+              try {
+                const cleanItem = { ...item, uid: user.uid };
+                delete cleanItem.docId;
+                await addDoc(collection(db, 'mockAttempts'), cleanItem);
+                addedCount++;
+              } catch (err) {
+                console.error('Import cloud sync err:', err);
+              }
+            }
+          }
+          if (user) await syncAndLoadUserAttempts(user);
+          alert(`Successfully synced ${addedCount} mock tests to Cloud (Laptop + Mobile)!`);
         }
       } catch (err) {
         alert("Invalid backup JSON file.");
@@ -990,742 +1084,6 @@ ${rawText.slice(0, 15000)}`;
             </div>
             <div>
               <h1 className="font-bold text-white text-base">Mains AI Chapter & Topic Mock Portal</h1>
-              <p className="text-xs text-emerald-400">Student: {user.displayName || user.email}</p>
-            </div>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              onClick={() => setActiveTab('create')}
-              className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition ${activeTab === 'create' ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-slate-300'}`}
-            >
-              + Create Mock
-            </button>
-            <button
-              onClick={() => setActiveTab('vault')}
-              className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition flex items-center gap-1.5 ${activeTab === 'vault' ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-slate-300'}`}
-            >
-              <FolderKanban className="w-3.5 h-3.5" />
-              AI Chapter & Topic Vault ({savedAttempts.length})
-            </button>
-            <button
-              onClick={() => setShowKeyModal(true)}
-              className="px-3 py-1.5 rounded-xl text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-amber-300 flex items-center gap-1"
-            >
-              <Key className="w-3.5 h-3.5" /> API Key
-            </button>
-            <button
-              onClick={() => signOut(auth)}
-              className="px-3 py-1.5 rounded-xl text-xs font-semibold bg-red-500/10 hover:bg-red-500/20 text-red-300 flex items-center gap-1"
-            >
-              <LogOut className="w-3.5 h-3.5" /> Logout
-            </button>
-          </div>
-        </div>
-      </header>
-
-      {showKeyModal && (
-        <div className="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full p-5">
-            <h3 className="font-bold text-white mb-2">Google AI Studio Key (`AQ.Ab8...` or `AIza...`)</h3>
-            <p className="text-xs text-slate-400 mb-3">
-              Apni `aistudio.google.com` se copy ki hui key (`AQ.Ab8...` ya `AIzaSy...`) yahan paste karke Save karein:
-            </p>
-            <input
-              type="text"
-              value={geminiKey}
-              onChange={(e) => setGeminiKey(e.target.value)}
-              placeholder="Paste AQ.Ab8... or AIzaSy... key here"
-              className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white mb-4"
-            />
-            <div className="flex justify-end gap-2">
-              <button
-                onClick={() => setShowKeyModal(false)}
-                className="px-3 py-2 rounded-xl bg-slate-800 text-slate-300 text-xs"
-              >
-                Close
-              </button>
-              <button
-                onClick={() => {
-                  localStorage.setItem('gemini_api_key', geminiKey.trim());
-                  setShowKeyModal(false);
-                }}
-                className="px-4 py-2 rounded-xl bg-indigo-600 text-white text-xs font-semibold"
-              >
-                Save Key
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      <main className="flex-1 max-w-7xl w-full mx-auto p-4">
-        {activeTab === 'create' && (
-          <div className="grid md:grid-cols-3 gap-6">
-            <div className="md:col-span-2 bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-4">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div>
-                  <h2 className="text-lg font-bold text-white flex items-center gap-2">
-                    <span>1. Upload Mains PDF</span>
-                    <span className="px-2.5 py-0.5 rounded-full bg-indigo-500/20 border border-indigo-500/30 text-indigo-300 text-[11px] flex items-center gap-1">
-                      <Sparkles className="w-3 h-3" /> Auto Chapter & Topic Tagging
-                    </span>
-                  </h2>
-                </div>
-                <button
-                  onClick={() => {
-                    setMockTitle('SSC CGL Mains Demo (Auto Topic Tagged)');
-                    startMockWithQuestions(SAMPLE_QUESTIONS);
-                  }}
-                  className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold"
-                >
-                  ▶ Run Topic-Wise Demo Mock (5 Qs)
-                </button>
-              </div>
-
-              <label className="border-2 border-dashed border-slate-700 hover:border-indigo-500 rounded-2xl p-6 flex flex-col items-center justify-center cursor-pointer bg-slate-950/50 transition">
-                <Upload className="w-8 h-8 text-indigo-400 mb-2" />
-                <span className="text-sm font-medium text-slate-200">Click to Upload Question Bank PDF</span>
-                <span className="text-xs text-emerald-400 mt-1">✓ AI automatically detects Subject, Chapter & Micro-Topic for every question</span>
-                <input type="file" accept="application/pdf" onChange={handlePdfUpload} className="hidden" />
-              </label>
-
-              {totalPages > 0 && (
-                <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs text-indigo-400 font-semibold mb-1">
-                      Scan From PDF Page # (Total {totalPages} pages)
-                    </label>
-                    <input
-                      type="number"
-                      min={1}
-                      max={totalPages}
-                      value={startPage}
-                      onChange={(e) => setStartPage(Number(e.target.value))}
-                      className="w-full px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-sm text-white"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs text-indigo-400 font-semibold mb-1">
-                      Scan To PDF Page # (Max 12 pages at once)
-                    </label>
-                    <input
-                      type="number"
-                      min={1}
-                      max={totalPages}
-                      value={endPage}
-                      onChange={(e) => setEndPage(Number(e.target.value))}
-                      className="w-full px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-sm text-white"
-                    />
-                  </div>
-                </div>
-              )}
-
-              {statusMsg && (
-                <div className="p-3 rounded-xl bg-indigo-500/10 border border-indigo-500/30 text-indigo-300 text-xs">
-                  {statusMsg}
-                </div>
-              )}
-
-              <div>
-                <label className="block text-xs text-slate-400 mb-1">Or Paste Questions Directly Below:</label>
-                <textarea
-                  rows={5}
-                  value={rawText}
-                  onChange={(e) => setRawText(e.target.value)}
-                  placeholder="Agar bina PDF ke seedha text copy-paste karna ho to yahan dalein... AI uska bhi Chapter aur Topic khud bana dega!"
-                  className="w-full p-3 rounded-xl bg-slate-950 border border-slate-800 text-xs text-slate-200"
-                />
-              </div>
-            </div>
-
-            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-4">
-              <h2 className="text-lg font-bold text-white">2. Custom Mock Settings</h2>
-              <div>
-                <label className="block text-xs text-slate-400 mb-1">Mock Test Name (AI Auto-Updates if Default)</label>
-                <input
-                  type="text"
-                  value={mockTitle}
-                  onChange={(e) => setMockTitle(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-sm text-white"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs text-slate-400 mb-1">From Question #</label>
-                  <input
-                    type="number"
-                    min={1}
-                    value={startQ}
-                    onChange={(e) => setStartQ(Number(e.target.value))}
-                    className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-sm text-white"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs text-slate-400 mb-1">To Question #</label>
-                  <input
-                    type="number"
-                    min={1}
-                    value={endQ}
-                    onChange={(e) => setEndQ(Number(e.target.value))}
-                    className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-sm text-white"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs text-slate-400 mb-1">Custom Timer (Minutes)</label>
-                <input
-                  type="number"
-                  min={1}
-                  value={durationMins}
-                  onChange={(e) => setDurationMins(Number(e.target.value))}
-                  className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-sm text-white"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs text-slate-400 mb-1">Correct Marks (+)</label>
-                  <input
-                    type="number"
-                    step="0.5"
-                    value={positiveMarks}
-                    onChange={(e) => setPositiveMarks(Number(e.target.value))}
-                    className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-sm text-emerald-400"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs text-slate-400 mb-1">Negative Marks (-)</label>
-                  <input
-                    type="number"
-                    step="0.25"
-                    value={negativeMarks}
-                    onChange={(e) => setNegativeMarks(Number(e.target.value))}
-                    className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-sm text-rose-400"
-                  />
-                </div>
-              </div>
-
-              <button
-                disabled={isGenerating}
-                onClick={generateMockFromText}
-                className="w-full py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white font-bold text-sm transition"
-              >
-                {isGenerating ? 'AI Scanning & Classifying Topics...' : `Generate Smart Mock (Q.${startQ} - Q.${endQ})`}
-              </button>
-            </div>
-          </div>
-        )}
-
-        {activeTab === 'test' && activeQuestions.length > 0 && (
-          <div className="grid md:grid-cols-4 gap-6">
-            <div className="md:col-span-3 bg-slate-900 border border-slate-800 rounded-2xl p-6 flex flex-col justify-between">
-              <div>
-                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 pb-4 mb-5">
-                  <div>
-                    <span className="text-xs text-indigo-400 font-semibold">{mockTitle}</span>
-                    <h3 className="text-lg font-bold text-white">
-                      Question {currentIdx + 1} of {activeQuestions.length} (PDF Q.{activeQuestions[currentIdx].qNum || currentIdx + 1})
-                    </h3>
-                    <div className="flex flex-wrap gap-1.5 mt-2">
-                      {activeQuestions[currentIdx].subject && (
-                        <span className="px-2.5 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 text-[11px] font-semibold">
-                          {activeQuestions[currentIdx].subject}
-                        </span>
-                      )}
-                      {activeQuestions[currentIdx].chapter && (
-                        <span className="px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 text-[11px] font-semibold">
-                          Chapter: {activeQuestions[currentIdx].chapter}
-                        </span>
-                      )}
-                      {activeQuestions[currentIdx].topic && (
-                        <span className="px-2.5 py-0.5 rounded-full bg-amber-500/20 text-amber-300 text-[11px] font-semibold">
-                          Topic: {activeQuestions[currentIdx].topic}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                  <div className="px-4 py-2 rounded-xl bg-slate-950 border border-slate-800 flex items-center gap-2 text-amber-400 font-mono font-bold">
-                    <Clock className="w-4 h-4" />
-                    {formatTimer(timeLeft)}
-                  </div>
-                </div>
-
-                <p className="text-base text-slate-100 leading-relaxed mb-6 whitespace-pre-line">
-                  {activeQuestions[currentIdx].question}
-                </p>
-
-                <div className="space-y-3">
-                  {activeQuestions[currentIdx].options.map((opt, oIdx) => {
-                    const selected = userAnswers[currentIdx] === oIdx;
-                    return (
-                      <button
-                        key={oIdx}
-                        onClick={() => setUserAnswers({ ...userAnswers, [currentIdx]: oIdx })}
-                        className={`w-full text-left p-4 rounded-xl border text-sm transition flex items-center gap-3 ${
-                          selected
-                            ? 'bg-indigo-600/20 border-indigo-500 text-white font-semibold'
-                            : 'bg-slate-950 border-slate-800 text-slate-300 hover:border-slate-700'
-                        }`}
-                      >
-                        <span className="w-7 h-7 rounded-lg bg-slate-900 border border-slate-700 flex items-center justify-center text-xs font-bold">
-                          {String.fromCharCode(65 + oIdx)}
-                        </span>
-                        <span>{opt}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              <div className="flex flex-wrap items-center justify-between gap-3 pt-6 mt-8 border-t border-slate-800">
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => {
-                      const copy = { ...userAnswers };
-                      delete copy[currentIdx];
-                      setUserAnswers(copy);
-                    }}
-                    className="px-3 py-2 rounded-xl bg-slate-800 text-xs text-slate-300"
-                  >
-                    Clear Response
-                  </button>
-                  <button
-                    onClick={() => setMarkedForReview({ ...markedForReview, [currentIdx]: !markedForReview[currentIdx] })}
-                    className="px-3 py-2 rounded-xl bg-amber-500/20 text-amber-300 text-xs"
-                  >
-                    {markedForReview[currentIdx] ? 'Unmark Review' : 'Mark for Review'}
-                  </button>
-                </div>
-
-                <div className="flex gap-2">
-                  <button
-                    disabled={currentIdx === 0}
-                    onClick={() => setCurrentIdx((c) => c - 1)}
-                    className="px-4 py-2 rounded-xl bg-slate-800 disabled:opacity-40 text-xs font-semibold"
-                  >
-                    Previous
-                  </button>
-                  {currentIdx < activeQuestions.length - 1 ? (
-                    <button
-                      onClick={() => setCurrentIdx((c) => c + 1)}
-                      className="px-5 py-2 rounded-xl bg-indigo-600 text-white text-xs font-semibold"
-                    >
-                      Save & Next
-                    </button>
-                  ) : (
-                    <button
-                      onClick={handleSubmitTest}
-                      className="px-6 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold"
-                    >
-                      Submit Mock Test
-                    </button>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 flex flex-col justify-between">
-              <div>
-                <h4 className="font-bold text-sm text-white mb-3">Question Palette</h4>
-                <div className="grid grid-cols-5 gap-2">
-                  {activeQuestions.map((_, i) => {
-                    const answered = userAnswers[i] !== undefined;
-                    const marked = markedForReview[i];
-                    let bg = 'bg-slate-950 border-slate-800 text-slate-400';
-                    if (answered) bg = 'bg-emerald-600 text-white border-emerald-500';
-                    if (marked) bg = 'bg-amber-500 text-slate-950 border-amber-400';
-                    return (
-                      <button
-                        key={i}
-                        onClick={() => setCurrentIdx(i)}
-                        className={`h-9 rounded-lg border text-xs font-bold ${bg} ${currentIdx === i ? 'ring-2 ring-indigo-400' : ''}`}
-                      >
-                        {i + 1}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              <button
-                onClick={handleSubmitTest}
-                className="w-full py-3 mt-6 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-sm"
-              >
-                Submit & Save to Vault
-              </button>
-            </div>
-          </div>
-        )}
-
-        {activeTab === 'vault' && (
-          <div className="space-y-5">
-            <div className="flex flex-wrap items-center justify-between gap-3 bg-slate-900 border border-slate-800 p-4 rounded-2xl">
-              <div>
-                <h2 className="text-lg font-bold text-white flex items-center gap-2">
-                  <Layers className="w-5 h-5 text-indigo-400" />
-                  <span>AI Automatic Chapter-Wise & Topic-Wise Manager</span>
-                </h2>
-                <p className="text-xs text-slate-400">
-                  AI aapke har mock test ke questions ko Subject, Chapter aur Topic ke hisab se automatically organize karta hai.
-                </p>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                <button
-                  onClick={() => setVaultViewMode('chapters')}
-                  className={`px-3 py-2 rounded-xl text-xs font-semibold transition ${
-                    vaultViewMode === 'chapters' ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-slate-300'
-                  }`}
-                >
-                  📚 Chapter & Topic Wise View
-                </button>
-                <button
-                  onClick={() => setVaultViewMode('tests')}
-                  className={`px-3 py-2 rounded-xl text-xs font-semibold transition ${
-                    vaultViewMode === 'tests' ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-slate-300'
-                  }`}
-                >
-                  📝 All Mock Tests ({savedAttempts.length})
-                </button>
-                <button
-                  onClick={exportBackupJSON}
-                  className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-semibold flex items-center gap-1.5"
-                >
-                  <Download className="w-4 h-4" /> Export
-                </button>
-                <label className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-semibold flex items-center gap-1.5 cursor-pointer">
-                  <FileUp className="w-4 h-4" /> Restore
-                  <input type="file" accept=".json" onChange={importBackupJSON} className="hidden" />
-                </label>
-              </div>
-            </div>
-
-            {/* Subject Filter Bar */}
-            {allSubjectsList.length > 1 && (
               <div className="flex flex-wrap items-center gap-2">
-                <span className="text-xs text-slate-400 flex items-center gap-1 mr-1">
-                  <Filter className="w-3.5 h-3.5 text-indigo-400" /> Filter Subject:
-                </span>
-                {allSubjectsList.map((sub) => (
-                  <button
-                    key={sub}
-                    onClick={() => {
-                      setSelectedSubjectFilter(sub);
-                      setSelectedChapterFilter('All');
-                    }}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition ${
-                      selectedSubjectFilter === sub
-                        ? 'bg-indigo-600 text-white'
-                        : 'bg-slate-900 border border-slate-800 text-slate-300 hover:border-slate-700'
-                    }`}
-                  >
-                    {sub}
-                  </button>
-                ))}
-              </div>
-            )}
-
-            {savedAttempts.length === 0 ? (
-              <div className="bg-slate-900 border border-slate-800 rounded-2xl p-10 text-center text-slate-400">
-                Abhi tak koi mock test save nahi hua hai. "+ Create Mock" me jakar apna pehla test dein!
-              </div>
-            ) : vaultViewMode === 'chapters' ? (
-              <div className="grid md:grid-cols-2 gap-4">
-                {chapterWiseStats
-                  .filter(item => selectedSubjectFilter === 'All' || item.subject === selectedSubjectFilter)
-                  .map((chapItem, cIdx) => {
-                    const accuracy = chapItem.totalQs > 0
-                      ? Math.round((chapItem.correct / chapItem.totalQs) * 100)
-                      : 0;
-                    const topicsArr = Object.values(chapItem.topicsMap);
-
-                    return (
-                      <div key={cIdx} className="bg-slate-900 border border-slate-800 rounded-2xl p-5 flex flex-col justify-between gap-4">
-                        <div>
-                          <div className="flex items-center justify-between gap-2">
-                            <span className="px-2.5 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 text-[11px] font-semibold">
-                              {chapItem.subject}
-                            </span>
-                            <span className={`text-xs font-bold px-2.5 py-0.5 rounded-full ${
-                              accuracy >= 75 ? 'bg-emerald-500/20 text-emerald-300' : accuracy >= 50 ? 'bg-amber-500/20 text-amber-300' : 'bg-rose-500/20 text-rose-300'
-                            }`}>
-                              Accuracy: {accuracy}%
-                            </span>
-                          </div>
-
-                          <h3 className="text-base font-bold text-white mt-2">
-                            Chapter: {chapItem.chapter}
-                          </h3>
-
-                          <div className="grid grid-cols-4 gap-2 mt-3 text-center">
-                            <div className="p-2 rounded-xl bg-slate-950 border border-slate-800">
-                              <div className="text-[11px] text-slate-400">Total Qs</div>
-                              <div className="text-sm font-bold text-white">{chapItem.totalQs}</div>
-                            </div>
-                            <div className="p-2 rounded-xl bg-emerald-500/10 border border-emerald-500/20">
-                              <div className="text-[11px] text-emerald-400">Correct</div>
-                              <div className="text-sm font-bold text-emerald-300">{chapItem.correct}</div>
-                            </div>
-                            <div className="p-2 rounded-xl bg-rose-500/10 border border-rose-500/20">
-                              <div className="text-[11px] text-rose-400">Wrong</div>
-                              <div className="text-sm font-bold text-rose-300">{chapItem.wrong}</div>
-                            </div>
-                            <div className="p-2 rounded-xl bg-slate-950 border border-slate-800">
-                              <div className="text-[11px] text-slate-400">Skipped</div>
-                              <div className="text-sm font-bold text-slate-300">{chapItem.skipped}</div>
-                            </div>
-                          </div>
-
-                          {/* Topic-Wise Breakdown Pills inside Chapter */}
-                          <div className="mt-4">
-                            <div className="text-xs font-semibold text-slate-400 mb-2">
-                              📌 AI Topic-Wise Breakdown ({topicsArr.length} Topics):
-                            </div>
-                            <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1">
-                              {topicsArr.map((tObj, tIdx) => (
-                                <div
-                                  key={tIdx}
-                                  className="flex items-center justify-between px-3 py-1.5 rounded-xl bg-slate-950 border border-slate-800 text-xs"
-                                >
-                                  <span className="text-slate-200 font-medium truncate pr-2">
-                                    • {tObj.topic}
-                                  </span>
-                                  <div className="flex items-center gap-2 shrink-0">
-                                    <span className="text-emerald-400">{tObj.correct}✓</span>
-                                    <span className="text-rose-400">{tObj.wrong}✗</span>
-                                    <button
-                                      onClick={() => {
-                                        setMockTitle(`${chapItem.chapter} - ${tObj.topic}`);
-                                        startMockWithQuestions(tObj.questions);
-                                      }}
-                                      className="px-2 py-0.5 rounded bg-indigo-600/30 hover:bg-indigo-600 text-indigo-200 text-[10px] font-semibold"
-                                    >
-                                      Practice Topic
-                                    </button>
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        </div>
-
-                        <div className="flex gap-2 pt-2 border-t border-slate-800">
-                          <button
-                            onClick={() => {
-                              setMockTitle(`${chapItem.subject}: ${chapItem.chapter} (Full Chapter Practice)`);
-                              startMockWithQuestions(chapItem.allQuestions);
-                            }}
-                            className="flex-1 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold"
-                          >
-                            Practice Full Chapter ({chapItem.totalQs} Qs)
-                          </button>
-                          {chapItem.mistakeQuestions.length > 0 && (
-                            <button
-                              onClick={() => {
-                                setMockTitle(`${chapItem.chapter} (Mistakes Retry)`);
-                                startMockWithQuestions(chapItem.mistakeQuestions);
-                              }}
-                              className="px-3 py-2 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 text-xs font-semibold"
-                            >
-                              Retry Mistakes ({chapItem.mistakeQuestions.length})
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
-              </div>
-            ) : (
-              <div className="grid md:grid-cols-2 gap-4">
-                {savedAttempts
-                  .filter(att => selectedSubjectFilter === 'All' || (att.subjectsList || [att.primarySubject]).includes(selectedSubjectFilter))
-                  .map((att, idx) => (
-                    <div key={idx} className="bg-slate-900 border border-slate-800 rounded-2xl p-5 flex flex-col justify-between gap-4">
-                      <div>
-                        <div className="flex items-center justify-between">
-                          <span className="text-xs text-indigo-400 font-semibold">{att.qRange}</span>
-                          <span className="text-xs text-slate-500">{att.dateStr}</span>
-                        </div>
-                        <h3 className="text-base font-bold text-white mt-1">{att.title}</h3>
-
-                        <div className="flex flex-wrap gap-1.5 mt-2">
-                          {(att.chaptersList || [att.primaryChapter]).filter(Boolean).slice(0, 4).map((ch, ci) => (
-                            <span key={ci} className="px-2 py-0.5 rounded-md bg-slate-950 border border-slate-800 text-[11px] text-emerald-300">
-                              #{ch}
-                            </span>
-                          ))}
-                        </div>
-
-                        <div className="grid grid-cols-4 gap-2 mt-4 text-center">
-                          <div className="p-2 rounded-xl bg-slate-950 border border-slate-800">
-                            <div className="text-xs text-slate-400">Score</div>
-                            <div className="text-sm font-bold text-white">{att.totalScore}/{att.maxScore}</div>
-                          </div>
-                          <div className="p-2 rounded-xl bg-emerald-500/10 border border-emerald-500/20">
-                            <div className="text-xs text-emerald-400">Correct</div>
-                            <div className="text-sm font-bold text-emerald-300">{att.correct}</div>
-                          </div>
-                          <div className="p-2 rounded-xl bg-rose-500/10 border border-rose-500/20">
-                            <div className="text-xs text-rose-400">Wrong</div>
-                            <div className="text-sm font-bold text-rose-300">{att.wrong}</div>
-                          </div>
-                          <div className="p-2 rounded-xl bg-slate-950 border border-slate-800">
-                            <div className="text-xs text-slate-400">Skipped</div>
-                            <div className="text-sm font-bold text-slate-300">{att.unattempted}</div>
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="flex gap-2">
-                        <button
-                          onClick={() => {
-                            setSelectedAttempt(att);
-                            setFilterMode('all');
-                            setActiveTab('review');
-                          }}
-                          className="flex-1 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold"
-                        >
-                          Revise & See Mistakes
-                        </button>
-                        <button
-                          onClick={() => {
-                            const wrongQs = att.questions.filter((q, i) => att.userAnswers?.[i] !== q.correctIndex);
-                            if (wrongQs.length === 0) {
-                              alert("Sabhi answers sahi the!");
-                              return;
-                            }
-                            setMockTitle(`${att.title} (Mistakes Retry)`);
-                            startMockWithQuestions(wrongQs);
-                          }}
-                          className="px-3 py-2 rounded-xl bg-amber-500/20 text-amber-300 text-xs font-semibold"
-                        >
-                          Retry Mistakes
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-              </div>
-            )}
-          </div>
-        )}
-
-        {activeTab === 'review' && selectedAttempt && (
-          <div className="space-y-4">
-            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 flex flex-wrap items-center justify-between gap-4">
-              <div>
-                <h2 className="text-lg font-bold text-white">{selectedAttempt.title} — AI Topic Revision Sheet</h2>
-                <p className="text-xs text-slate-400">
-                  Score: <b className="text-white">{selectedAttempt.totalScore}/{selectedAttempt.maxScore}</b> | Correct: {selectedAttempt.correct} | Wrong: {selectedAttempt.wrong} | Skipped: {selectedAttempt.unattempted}
-                </p>
-              </div>
-              <div className="flex gap-2">
-                {['all', 'wrong', 'unattempted', 'correct'].map((f) => (
-                  <button
-                    key={f}
-                    onClick={() => setFilterMode(f)}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-semibold capitalize ${
-                      filterMode === f ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-slate-300'
-                    }`}
-                  >
-                    {f}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className="space-y-4">
-              {selectedAttempt.questions.map((q, idx) => {
-                const uAns = selectedAttempt.userAnswers?.[idx];
-                const isCorrect = uAns === q.correctIndex;
-                const isSkipped = uAns === undefined;
-                const isWrong = !isSkipped && !isCorrect;
-
-                if (filterMode === 'wrong' && !isWrong) return null;
-                if (filterMode === 'unattempted' && !isSkipped) return null;
-                if (filterMode === 'correct' && !isCorrect) return null;
-
-                return (
-                  <div key={idx} className="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-3">
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="text-xs font-bold text-indigo-400">Question {idx + 1} (PDF Q.{q.qNum || idx + 1})</span>
-                        {q.subject && (
-                          <span className="px-2 py-0.5 rounded-md bg-indigo-500/15 text-indigo-300 text-[11px]">
-                            {q.subject}
-                          </span>
-                        )}
-                        {q.chapter && (
-                          <span className="px-2 py-0.5 rounded-md bg-emerald-500/15 text-emerald-300 text-[11px]">
-                            Chapter: {q.chapter}
-                          </span>
-                        )}
-                        {q.topic && (
-                          <span className="px-2 py-0.5 rounded-md bg-amber-500/15 text-amber-300 text-[11px]">
-                            Topic: {q.topic}
-                          </span>
-                        )}
-                      </div>
-                      {isCorrect && <span className="px-2.5 py-1 rounded-full bg-emerald-500/20 text-emerald-300 text-xs font-bold">Correct ✓</span>}
-                      {isWrong && <span className="px-2.5 py-1 rounded-full bg-rose-500/20 text-rose-300 text-xs font-bold">Wrong ✗</span>}
-                      {isSkipped && <span className="px-2.5 py-1 rounded-full bg-slate-800 text-slate-300 text-xs font-bold">Skipped</span>}
-                    </div>
-
-                    <p className="text-sm text-white leading-relaxed whitespace-pre-line">{q.question}</p>
-
-                    <div className="grid sm:grid-cols-2 gap-2">
-                      {q.options.map((opt, oIdx) => {
-                        const isRightOpt = oIdx === q.correctIndex;
-                        const isUserOpt = oIdx === uAns;
-                        let style = 'bg-slate-950 border-slate-800 text-slate-300';
-                        if (isRightOpt) style = 'bg-emerald-500/20 border-emerald-500 text-emerald-200 font-semibold';
-                        else if (isUserOpt && !isRightOpt) style = 'bg-rose-500/20 border-rose-500 text-rose-200 font-semibold';
-
-                        return (
-                          <div
-                            key={oIdx}
-                            onClick={() => updateCorrectOptionInReview(idx, oIdx)}
-                            title="Click to set this option as the official Answer Key"
-                            className={`p-3 rounded-xl border text-xs flex items-center justify-between cursor-pointer hover:border-indigo-400 transition ${style}`}
-                          >
-                            <span>{String.fromCharCode(65 + oIdx)}. {opt}</span>
-                            {isRightOpt && <span>✓ Correct Key</span>}
-                            {isUserOpt && !isRightOpt && <span>✗ Your Answer</span>}
-                          </div>
-                        );
-                      })}
-                    </div>
-
-                    <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 text-xs text-slate-300">
-                      <strong className="text-indigo-400">Solution: </strong> {q.explanation}
-                    </div>
-
-                    <div className="pt-2">
-                      <label className="block text-xs text-amber-400 font-semibold mb-1">Meri Galti Kya Thi? (Personal Revision Note):</label>
-                      <div className="flex gap-2">
-                        <input
-                          type="text"
-                          defaultValue={selectedAttempt.notes?.[idx] || ''}
-                          onChange={(e) => setNoteInput({ ...noteInput, [idx]: e.target.value })}
-                          placeholder="Apni galti ya formula yahan likhein taaki exam se pehle revise kar sakein..."
-                          className="flex-1 px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white"
-                        />
-                        <button
-                          onClick={() => saveMistakeNote(idx, noteInput[idx] ?? selectedAttempt.notes?.[idx] ?? '')}
-                          className="px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-500 text-white text-xs font-semibold"
-                        >
-                          Save Note
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
-      </main>
-    </div>
-  );
-}
+                <span className="text-xs text-emerald-400">Student: {user.displayName || user.email}</span>
+                <span className="text-[11px] px-2 py-0.5 rounded-full bg-slate-800 text-indigo-3
