@@ -63,84 +63,6 @@ const SAMPLE_QUESTIONS = [
   }
 ];
 
-// Built-in Offline Smart Parser (Works 100% without any API Key!)
-function parseQuestionsOffline(rawText, startQ, endQ) {
-  const clean = rawText.replace(/\r/g, '\n');
-  const lines = clean.split('\n').map(l => l.trim()).filter(Boolean);
-  const fullStr = lines.join('\n');
-
-  // Split by question numbers like "1.", "Q.1", "Q1.", "Question 1"
-  const qRegex = /(?:^|\n)\s*(?:Q(?:uestion)?\s*\.?\s*)?(\d{1,3})\s*[.):-]\s+/gi;
-  const matches = [...fullStr.matchAll(qRegex)];
-
-  const extracted = [];
-  if (matches.length > 0) {
-    for (let i = 0; i < matches.length; i++) {
-      const qNum = parseInt(matches[i][1], 10);
-      if (qNum < startQ || qNum > endQ) continue;
-
-      const startPos = matches[i].index + matches[i][0].length;
-      const endPos = i + 1 < matches.length ? matches[i + 1].index : fullStr.length;
-      const block = fullStr.slice(startPos, endPos).trim();
-
-      // Try extracting options (a) (b) (c) (d) or A. B. C. D. or 1) 2) 3) 4)
-      const optRegex = /(?:^|\n|\s)(?:\(?([A-Da-d1-4])\)?[.):-]\s+)/g;
-      const optMatches = [...block.matchAll(optRegex)];
-
-      let qText = block;
-      let options = ["Option A", "Option B", "Option C", "Option D"];
-      let correctIndex = 0;
-
-      if (optMatches.length >= 4) {
-        const lastFour = optMatches.slice(0, 4);
-        qText = block.slice(0, lastFour[0].index).trim();
-        options = lastFour.map((m, idx) => {
-          const oStart = m.index + m[0].length;
-          const oEnd = idx + 1 < lastFour.length ? lastFour[idx + 1].index : block.length;
-          return block.slice(oStart, oEnd).replace(/\n+/g, ' ').trim().slice(0, 220) || `Option ${idx + 1}`;
-        });
-      }
-
-      // Check if answer is mentioned in the block like "Ans: (b)" or "Answer: C"
-      const ansMatch = block.match(/(?:Ans(?:wer)?|Correct)\s*[:-]?\s*\(?([A-Da-d1-4])\)?/i);
-      if (ansMatch) {
-        const val = ansMatch[1].toUpperCase();
-        if (['A', '1'].includes(val)) correctIndex = 0;
-        else if (['B', '2'].includes(val)) correctIndex = 1;
-        else if (['C', '3'].includes(val)) correctIndex = 2;
-        else if (['D', '4'].includes(val)) correctIndex = 3;
-      }
-
-      if (qText.length > 2) {
-        extracted.push({
-          qNum,
-          question: qText,
-          options,
-          correctIndex,
-          explanation: "Offline Smart Parser dwara PDF se extract kiya gaya question. Revision ke waqt aap niche apna personal note save kar sakte hain."
-        });
-      }
-    }
-  }
-
-  // Fallback chunking if PDF has unusual numbering
-  if (extracted.length === 0) {
-    const chunks = fullStr.split(/\n{2,}/).filter(c => c.trim().length > 20);
-    const count = Math.max(1, endQ - startQ + 1);
-    for (let i = 0; i < Math.min(count, chunks.length); i++) {
-      extracted.push({
-        qNum: startQ + i,
-        question: chunks[i].trim().slice(0, 600),
-        options: ["Option (A)", "Option (B)", "Option (C)", "Option (D)"],
-        correctIndex: 0,
-        explanation: "PDF text se direct practice block banaya gaya hai."
-      });
-    }
-  }
-
-  return extracted;
-}
-
 export default function App() {
   const [user, setUser] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
@@ -156,6 +78,11 @@ export default function App() {
   const [activeTab, setActiveTab] = useState('create');
   const [mockTitle, setMockTitle] = useState('Mains Practice Set - 1');
   const [rawText, setRawText] = useState('');
+  const [startPage, setStartPage] = useState(1);
+  const [endPage, setEndPage] = useState(10);
+  const [totalPages, setTotalPages] = useState(0);
+  const [pdfBuffer, setPdfBuffer] = useState(null);
+
   const [startQ, setStartQ] = useState(1);
   const [endQ, setEndQ] = useState(25);
   const [durationMins, setDurationMins] = useState(20);
@@ -239,105 +166,189 @@ export default function App() {
     const file = e.target.files?.[0];
     if (!file) return;
     setMockTitle(file.name.replace('.pdf', ''));
-    setStatusMsg('PDF padha ja raha hai...');
+    setStatusMsg('PDF load ho raha hai (Vision Image Scanner Ready)...');
     try {
       const arrayBuffer = await file.arrayBuffer();
-      const pdf = await window.pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+      setPdfBuffer(arrayBuffer);
+      const pdf = await window.pdfjsLib.getDocument({ data: arrayBuffer.slice(0) }).promise;
+      setTotalPages(pdf.numPages);
+      setStartPage(1);
+      setEndPage(Math.min(10, pdf.numPages));
+
       let extracted = '';
       for (let i = 1; i <= pdf.numPages; i++) {
         const page = await pdf.getPage(i);
         const content = await page.getTextContent();
-        let lastY = null;
-        let pageText = '';
-        for (const item of content.items) {
-          if (lastY !== null && Math.abs(item.transform[5] - lastY) > 5) {
-            pageText += '\n';
-          } else if (lastY !== null) {
-            pageText += ' ';
-          }
-          pageText += item.str;
-          lastY = item.transform[5];
-        }
-        extracted += `\n--- Page ${i} ---\n` + pageText;
+        const pageStr = content.items.map(it => it.str).join(' ');
+        extracted += `\n--- Page ${i} ---\n` + pageStr;
       }
       setRawText(extracted);
-      setStatusMsg(`PDF loaded! Total ${pdf.numPages} pages extracted. Ab 'Generate Mock' dabayein.`);
+      setStatusMsg(`✓ PDF Loaded (${pdf.numPages} Pages)! Niche PDF Page range check karein aur 'Generate Mock' dabayein.`);
     } catch (err) {
       setStatusMsg('PDF read error: ' + err.message);
     }
   };
 
-  const generateMockFromText = async () => {
-    if (!rawText.trim()) {
-      alert("Kripya pehle PDF upload karein ya Question text paste karein, ya 'Run Instant Demo Mock' dabayein.");
-      return;
+  const renderPdfPagesToImages = async (buffer, fromP, toP) => {
+    const pdf = await window.pdfjsLib.getDocument({ data: buffer.slice(0) }).promise;
+    const imgs = [];
+    const safeStart = Math.max(1, fromP);
+    const safeEnd = Math.min(pdf.numPages, toP, safeStart + 11);
+
+    for (let p = safeStart; p <= safeEnd; p++) {
+      setStatusMsg(`Scanning PDF Page ${p} of ${safeEnd} (Vision OCR)...`);
+      const page = await pdf.getPage(p);
+      const viewport = page.getViewport({ scale: 1.4 });
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      canvas.width = viewport.width;
+      canvas.height = viewport.height;
+      await page.render({ canvasContext: ctx, viewport }).promise;
+      const dataUrl = canvas.toDataURL('image/jpeg', 0.78);
+      imgs.push({
+        inlineData: {
+          mimeType: 'image/jpeg',
+          data: dataUrl.split(',')[1]
+        }
+      });
     }
-    setIsGenerating(true);
-    setStatusMsg(`Question ${startQ} se ${endQ} tak तैयार ho rahe hain...`);
+    return imgs;
+  };
 
-    const cleanKey = geminiKey.trim();
-    const modelsToTry = [
-      'gemini-3.0-flash',
-      'gemini-3-flash-preview',
-      'gemini-2.5-flash',
-      'gemini-2.0-flash'
-    ];
+  // Supports both AQ.Ab8... (Auth Keys) and AIzaSy... (Standard Keys) across all Gemini endpoints
+  const callGeminiWithAnyKey = async (cleanKey, modelName, parts) => {
+    const payload = JSON.stringify({
+      contents: [{ parts }],
+      generationConfig: { responseMimeType: "application/json" }
+    });
 
-    let aiParsed = null;
-
-    if (cleanKey && cleanKey.startsWith('AIza')) {
-      const prompt = `Extract multiple-choice questions from the following text strictly from Question number ${startQ} to Question number ${endQ}.
-Return ONLY a valid JSON array of objects with keys:
-"qNum": number,
-"question": string,
-"options": array of 4 strings,
-"correctIndex": number (0 to 3),
-"explanation": string (detailed step-by-step solution in Hinglish/English).
-
-Text:
-${rawText.slice(0, 60000)}`;
-
-      for (const modelName of modelsToTry) {
-        try {
-          const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${cleanKey}`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              contents: [{ parts: [{ text: prompt }] }],
-              generationConfig: { responseMimeType: "application/json" }
-            })
-          });
-          const data = await res.json();
-          if (!data.error) {
-            const outputText = data.candidates?.[0]?.content?.parts?.[0]?.text || '[]';
-            const parsed = JSON.parse(outputText);
-            if (Array.isArray(parsed) && parsed.length > 0) {
-              aiParsed = parsed;
-              break;
-            }
-          }
-        } catch (err) {
-          // Automatically try next model or offline parser
+    const attempts = [
+      // Method 1: x-goog-api-key header (Recommended for AQ. auth keys & AIza keys)
+      {
+        url: `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent`,
+        headers: {
+          'Content-Type': 'application/json',
+          'x-goog-api-key': cleanKey
+        }
+      },
+      // Method 2: Authorization Bearer token (Fallback for AQ. OAuth/Auth keys)
+      {
+        url: `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent`,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${cleanKey}`
+        }
+      },
+      // Method 3: URL query param
+      {
+        url: `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${encodeURIComponent(cleanKey)}`,
+        headers: {
+          'Content-Type': 'application/json'
         }
       }
-    }
+    ];
 
-    if (aiParsed && aiParsed.length > 0) {
-      setIsGenerating(false);
-      setStatusMsg('');
-      startMockWithQuestions(aiParsed);
+    let lastErr = '';
+    for (const att of attempts) {
+      try {
+        const res = await fetch(att.url, {
+          method: 'POST',
+          headers: att.headers,
+          body: payload
+        });
+        const data = await res.json();
+        if (!data.error && data.candidates?.[0]?.content?.parts?.[0]?.text) {
+          return { text: data.candidates[0].content.parts[0].text };
+        }
+        if (data.error) {
+          lastErr = data.error.message;
+        }
+      } catch (e) {
+        lastErr = e.message;
+      }
+    }
+    return { error: lastErr };
+  };
+
+  const generateMockFromText = async () => {
+    const cleanKey = geminiKey.trim();
+    if (!cleanKey) {
+      setShowKeyModal(true);
+      alert("Kripya 'API Key' button me jakar apni Gemini API Key (AQ... ya AIza...) paste karke Save karein.");
       return;
     }
 
-    // Automatic 100% Permanent Offline Fallback (Never fails!)
-    const offlineQuestions = parseQuestionsOffline(rawText, startQ, endQ);
-    setIsGenerating(false);
-    setStatusMsg('');
+    if (!rawText.trim() && !pdfBuffer) {
+      alert("Kripya pehle PDF upload karein ya Question text paste karein.");
+      return;
+    }
 
-    if (offlineQuestions.length > 0) {
-      startMockWithQuestions(offlineQuestions);
-    } else {
-      alert("Text me questions nahi mile. Kripya check karein ki question range sahi hai.");
+    setIsGenerating(true);
+
+    try {
+      let parts = [];
+
+      if (pdfBuffer) {
+        const imageParts = await renderPdfPagesToImages(pdfBuffer, startPage, endPage);
+        parts.push(...imageParts);
+      }
+
+      setStatusMsg(`AI Vision Question ${startQ} se ${endQ} tak ke questions aur 4 options nikal raha hai...`);
+
+      const prompt = `You are an expert SSC CGL Mains exam parser. Look carefully at the attached PDF page images and/or text.
+Ignore coaching watermarks/headers like "Telegram YouTube Instagram App SSC PANACEA".
+Extract the multiple-choice questions from Question number ${startQ} to Question number ${endQ} (or all questions visible on these scanned pages).
+
+Return ONLY a valid JSON array of objects with these exact keys:
+- "qNum": number
+- "question": string (the complete question statement without watermarks)
+- "options": array of 4 strings (the 4 options A, B, C, D)
+- "correctIndex": number (0 for A, 1 for B, 2 for C, 3 for D - solve accurately)
+- "explanation": string (detailed step-by-step solution in Hinglish/English)
+
+Additional Text:
+${rawText.slice(0, 15000)}`;
+
+      parts.push({ text: prompt });
+
+      const modelsToTry = [
+        'gemini-3.0-flash',
+        'gemini-3-flash-preview',
+        'gemini-2.5-flash',
+        'gemini-2.0-flash'
+      ];
+
+      let parsedQuestions = null;
+      let lastError = '';
+
+      for (const modelName of modelsToTry) {
+        const result = await callGeminiWithAnyKey(cleanKey, modelName, parts);
+        if (result.text) {
+          try {
+            const cleanJson = result.text.replace(/```json|```/g, '').trim();
+            const parsed = JSON.parse(cleanJson);
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              parsedQuestions = parsed;
+              break;
+            }
+          } catch (e) {
+            lastError = "JSON parse error: " + e.message;
+          }
+        } else {
+          lastError = result.error;
+        }
+      }
+
+      if (parsedQuestions && parsedQuestions.length > 0) {
+        startMockWithQuestions(parsedQuestions);
+      } else {
+        alert(`Questions extract nahi ho paye.\nServer Message: ${lastError}`);
+      }
+    } catch (err) {
+      alert("Error: " + err.message);
+    } finally {
+      setIsGenerating(false);
+      setStatusMsg('');
     }
   };
 
@@ -622,7 +633,7 @@ ${rawText.slice(0, 60000)}`;
               onClick={() => setShowKeyModal(true)}
               className="px-3 py-1.5 rounded-xl text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-amber-300 flex items-center gap-1"
             >
-              <Key className="w-3.5 h-3.5" /> API Key (Optional)
+              <Key className="w-3.5 h-3.5" /> API Key
             </button>
             <button
               onClick={() => signOut(auth)}
@@ -637,15 +648,15 @@ ${rawText.slice(0, 60000)}`;
       {showKeyModal && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50">
           <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full p-5">
-            <h3 className="font-bold text-white mb-2">Gemini AI Key (Optional)</h3>
+            <h3 className="font-bold text-white mb-2">Google AI Studio Key (`AQ.Ab8...` or `AIza...`)</h3>
             <p className="text-xs text-slate-400 mb-3">
-              Is portal me ab Built-in Offline Smart Parser laga hai, jo bina API key ke bhi kaam karta hai! Agar AI explanations chahiye to `AIzaSy...` key yahan rakhein:
+              Apni `aistudio.google.com` se copy ki hui key (`AQ.Ab8...` ya `AIzaSy...`) yahan paste karke Save karein:
             </p>
             <input
               type="text"
               value={geminiKey}
               onChange={(e) => setGeminiKey(e.target.value)}
-              placeholder="Optional: AIzaSy..."
+              placeholder="Paste AQ.Ab8... or AIzaSy... key here"
               className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white mb-4"
             />
             <div className="flex justify-end gap-2">
@@ -657,7 +668,7 @@ ${rawText.slice(0, 60000)}`;
               </button>
               <button
                 onClick={() => {
-                  localStorage.setItem('gemini_api_key', geminiKey);
+                  localStorage.setItem('gemini_api_key', geminiKey.trim());
                   setShowKeyModal(false);
                 }}
                 className="px-4 py-2 rounded-xl bg-indigo-600 text-white text-xs font-semibold"
@@ -674,7 +685,7 @@ ${rawText.slice(0, 60000)}`;
           <div className="grid md:grid-cols-3 gap-6">
             <div className="md:col-span-2 bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-4">
               <div className="flex items-center justify-between">
-                <h2 className="text-lg font-bold text-white">1. Upload Mains PDF or Paste Questions</h2>
+                <h2 className="text-lg font-bold text-white">1. Upload Mains PDF (Scanned or Text)</h2>
                 <button
                   onClick={() => {
                     setMockTitle('SSC CGL Mains Demo Test (Q.1 - Q.5)');
@@ -689,9 +700,40 @@ ${rawText.slice(0, 60000)}`;
               <label className="border-2 border-dashed border-slate-700 hover:border-indigo-500 rounded-2xl p-6 flex flex-col items-center justify-center cursor-pointer bg-slate-950/50 transition">
                 <Upload className="w-8 h-8 text-indigo-400 mb-2" />
                 <span className="text-sm font-medium text-slate-200">Click to Upload Question Bank PDF</span>
-                <span className="text-xs text-emerald-400 mt-1">✓ Works 100% with Built-in Offline Smart Parser + AI</span>
+                <span className="text-xs text-emerald-400 mt-1">✓ Supports `AQ.Ab8...` Auth Keys + Scanned Coaching PDFs</span>
                 <input type="file" accept="application/pdf" onChange={handlePdfUpload} className="hidden" />
               </label>
+
+              {totalPages > 0 && (
+                <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs text-indigo-400 font-semibold mb-1">
+                      Scan From PDF Page # (Total {totalPages} pages)
+                    </label>
+                    <input
+                      type="number"
+                      min={1}
+                      max={totalPages}
+                      value={startPage}
+                      onChange={(e) => setStartPage(Number(e.target.value))}
+                      className="w-full px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-sm text-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-indigo-400 font-semibold mb-1">
+                      Scan To PDF Page # (Max 12 pages at once)
+                    </label>
+                    <input
+                      type="number"
+                      min={1}
+                      max={totalPages}
+                      value={endPage}
+                      onChange={(e) => setEndPage(Number(e.target.value))}
+                      className="w-full px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-sm text-white"
+                    />
+                  </div>
+                </div>
+              )}
 
               {statusMsg && (
                 <div className="p-3 rounded-xl bg-indigo-500/10 border border-indigo-500/30 text-indigo-300 text-xs">
@@ -700,12 +742,12 @@ ${rawText.slice(0, 60000)}`;
               )}
 
               <div>
-                <label className="block text-xs text-slate-400 mb-1">Extracted PDF Text / Direct Paste Box:</label>
+                <label className="block text-xs text-slate-400 mb-1">Or Paste Questions Directly Below:</label>
                 <textarea
-                  rows={7}
+                  rows={5}
                   value={rawText}
                   onChange={(e) => setRawText(e.target.value)}
-                  placeholder="PDF upload karne par text yahan aa jayega, ya aap seedha questions copy-paste bhi kar sakte hain..."
+                  placeholder="Agar bina PDF ke seedha text copy-paste karna ho to yahan dalein..."
                   className="w-full p-3 rounded-xl bg-slate-950 border border-slate-800 text-xs text-slate-200"
                 />
               </div>
@@ -785,7 +827,7 @@ ${rawText.slice(0, 60000)}`;
                 onClick={generateMockFromText}
                 className="w-full py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white font-bold text-sm transition"
               >
-                {isGenerating ? 'Generating Mock Test...' : `Generate Mock (Q.${startQ} to Q.${endQ})`}
+                {isGenerating ? 'Scanning PDF Pages...' : `Generate Mock (Q.${startQ} to Q.${endQ})`}
               </button>
             </div>
           </div>
@@ -1071,9 +1113,6 @@ ${rawText.slice(0, 60000)}`;
                         );
                       })}
                     </div>
-                    <p className="text-[11px] text-slate-500">
-                      💡 Tip: Agar PDF me answer key alag page par thi, to upar kisi bhi option par 1-click karke sahi Answer Key set kar sakte hain (Score apne aap recalculate ho jayega).
-                    </p>
 
                     <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 text-xs text-slate-300">
                       <strong className="text-indigo-400">Solution: </strong> {q.explanation}
