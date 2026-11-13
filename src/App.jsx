@@ -25,8 +25,183 @@ import {
   FolderKanban, Sparkles, ShieldQuestion, Filter, Layers,
   RefreshCw, Edit3, Trash2, FileText, ArrowUp, ArrowDown,
   ZoomIn, ZoomOut, Pause, Play, Maximize2, Award, BarChart3,
-  CheckCircle2, Home, ArrowLeft, Globe, Hash
+  CheckCircle2, Home, ArrowLeft, Globe, Hash, Lock, Unlock,
+  Video, ShieldCheck, PlusCircle, ExternalLink
 } from 'lucide-react';
+
+// Pre-loaded CBT Questions extracted directly from the Simplicrack Computer Marathon Video
+constCOMPUTER_COURSE_QUESTIONS = [
+  {
+    id: 101,
+    qNum: 1,
+    customLabel: "Q.1",
+    subject: "Computer Knowledge",
+    chapter: "Computer Hardware & Ports",
+    topic: "VGA Connector Pins",
+    passage: "",
+    passageHi: "",
+    question: "VGA (Video Graphics Array) connectors are those connectors which connect the monitor to a computer's video card and have ______ holes/pins.",
+    questionHi: "VGA (वीडियो ग्राफिक्स ऐरे) कनेक्टर वे कनेक्टर होते हैं जो मॉनिटर को कंप्यूटर के वीडियो कार्ड से जोड़ते हैं और इसमें कुल ______ छेद (पिन) होते हैं।",
+    options: ["10 holes", "12 holes", "15 holes", "18 holes"],
+    optionsHi: ["10 छेद", "12 छेद", "15 छेद", "18 छेद"],
+    correctIndex: 2,
+    explanation: "A standard VGA (Video Graphics Array) connector has 15 pins/holes arranged in 3 rows of 5 pins each.",
+    explanationHi: "VGA (Video Graphics Array) पोर्ट में कुल 15 छेद (pins) होते हैं। अब इसकी जगह आधुनिक कंप्यूटरों में HDMI और DVI ने ले ली है।"
+  },
+  {
+    id: 102,
+    qNum: 2,
+    customLabel: "Q.2",
+    subject: "Computer Knowledge",
+    chapter: "Output Devices",
+    topic: "Impact Printers",
+    passage: "",
+    passageHi: "",
+    question: "The speed of ______ printer is measured in Characters Per Second (CPS).",
+    questionHi: "______ प्रिंटर की गति को 'कैरेक्टर्स प्रति सेकंड' (CPS) में मापा जाता है।",
+    options: ["Laser Printer", "Inkjet Printer", "Dot Matrix Printer", "Line Printer"],
+    optionsHi: ["लेजर प्रिंटर", "इंकजेट प्रिंटर", "डॉट मैट्रिक्स प्रिंटर", "लाइन प्रिंटर"],
+    correctIndex: 2,
+    explanation: "Dot Matrix Printer is an impact printer that prints one character at a time by striking an ink ribbon, so its speed is measured in Characters Per Second (CPS).",
+    explanationHi: "डॉट मैट्रिक्स प्रिंटर एक इम्पैक्ट प्रिंटर है जो एक बार में एक कैरेक्टर प्रिंट करता है (जैसे रेलवे टिकट काउंटर पर), इसलिए इसकी गति CPS (Characters Per Second) में मापी जाती है।"
+  },
+  {
+    id: 103,
+    qNum: 3,
+    customLabel: "Q.3",
+    subject: "Computer Knowledge",
+    chapter: "Computer Memory",
+    topic: "CPU Working Memory & SSD",
+    passage: "",
+    passageHi: "",
+    question: "______ is a high-speed device used in the CPU that is utilized to store data temporarily during processing, while Solid State Drives (SSD) are based on ______ memory technology.",
+    questionHi: "______ सीपीयू (CPU) के अंदर प्रयुक्त होने वाला एक हाई-स्पीड डिवाइस है जो प्रोसेसिंग के दौरान डेटा को अस्थायी रूप से स्टोर करता है, जबकि SSD ______ मेमोरी तकनीक पर आधारित होती है।",
+    options: ["Cache, Magnetic Disk", "Registers, NAND Flash", "ALU, Optical Laser", "ROM, SRAM"],
+    optionsHi: ["कैश, मैग्नेटिक डिस्क", "रजिस्टर (Registers), NAND फ्लैश", "ALU, ऑप्टिकल लेजर", "ROM, SRAM"],
+    correctIndex: 1,
+    explanation: "Registers are the fastest working storage embedded inside the CPU itself. Solid State Drives (SSDs) use non-volatile NAND Flash memory technology with no moving parts.",
+    explanationHi: "रजिस्टर (Registers) सीपीयू के अंदर सबसे तेज वर्किंग मेमोरी होती है, और आधुनिक SSD (Solid State Drive) बिना किसी घूमने वाले पार्ट के NAND Flash मेमोरी तकनीक पर काम करती है।"
+  },
+  {
+    id: 104,
+    qNum: 4,
+    customLabel: "Q.4",
+    subject: "Computer Knowledge",
+    chapter: "MS Office (Excel & PowerPoint)",
+    topic: "Worksheet Limits & Shortcuts",
+    passage: "",
+    passageHi: "",
+    question: "In MS Excel (2010 and later), what is the maximum number of rows and the letter address of the last (16,384th) column?",
+    questionHi: "MS Excel (2010 और उसके बाद के वर्जन) में अधिकतम कितनी पंक्तियाँ (Rows) होती हैं और अंतिम (16,384वें) कॉलम का नाम क्या होता है?",
+    options: ["65,536 rows & IV", "10,48,576 rows & XFD", "10,48,576 rows & ZZZ", "1,00,000 rows & XFA"],
+    optionsHi: ["65,536 रो और IV", "10,48,576 रो और XFD", "10,48,576 रो और ZZZ", "1,00,000 रो और XFA"],
+    correctIndex: 1,
+    explanation: "Modern MS Excel worksheets have 1,048,576 rows and 16,384 columns, where the last column is represented as XFD.",
+    explanationHi: "आधुनिक MS Excel वर्कशीट में कुल 10,48,576 रो (Rows) और 16,384 कॉलम होते हैं, तथा अंतिम कॉलम का पता 'XFD' होता है।"
+  },
+  {
+    id: 105,
+    qNum: 5,
+    customLabel: "Q.5",
+    subject: "Computer Knowledge",
+    chapter: "Networking & Cyber Security",
+    topic: "OSI Model & Malware",
+    passage: "",
+    passageHi: "",
+    question: "Which networking device operates at Layer 2 (Data Link Layer) of the OSI model to forward data based on MAC addresses, and which non-replicating malware disguises itself as legitimate software?",
+    questionHi: "कौन सा नेटवर्किंग डिवाइस OSI मॉडल के लेयर-2 (डेटा लिंक लेयर) पर MAC एड्रेस के आधार पर डेटा फॉरवर्ड करता है, और कौन सा नॉन-रेप्लिकेटिंग मैलवेयर असली सॉफ्टवेयर का भेष बदलकर सिस्टम में घुसता है?",
+    options: ["Hub & Worm", "Switch & Trojan Horse", "Router & Virus", "Repeater & Spyware"],
+    optionsHi: ["हब और वर्म", "स्विच (Switch) और ट्रोजन हॉर्स (Trojan)", "राउटर और वायरस", "रिपीटर और स्पाइवेयर"],
+    correctIndex: 1,
+    explanation: "A Switch operates at Layer 2 (Data Link Layer) using MAC addresses to filter traffic. A Trojan Horse is non-replicating malware that disguises itself as legitimate software to create a backdoor.",
+    explanationHi: "Switch लेयर-2 (Data Link Layer) पर MAC एड्रेस के आधार पर काम करता है, जबकि Trojan Horse अपनी कॉपी नहीं बनाता (non-replicating) बल्कि असली सॉफ्टवेयर का भेष बदलकर बैकडोर एंट्री देता है।"
+  }
+];
+
+const DEFAULT_COURSES = [
+  {
+    id: "course_comp_ssc_2026",
+    title: "SSC CGL Tier-2 & Railway Computer Special Batch (Complete Basics to Advanced)",
+    instructor: "Simplicrack • Curated by Rohit Kumar Wasnik",
+    price: 99,
+    originalPrice: 499,
+    badge: "🔥 Bestseller Mains Batch",
+    youtubeId: "6fBWo9XKApY",
+    youtubeUrl: "http://www.youtube.com/watch?v=6fBWo9XKApY",
+    description: "SSC CGL Mains (60 Marks) aur CHSL/Railway ke liye Complete One-Shot Computer Batch. Isme 5 Modules ke Video Lectures, Exact Topic Timestamps, AI Revision Notes aur Bilingual PYQ CBT Mock Test shamil hai.",
+    lectures: [
+      {
+        id: "lec_1",
+        title: "Class 1: Computer Basics, CPU, Memory (RAM/ROM/SSD) & Ports + PYQs",
+        duration: "1 Hr 34 Mins",
+        startSec: 0,
+        isFreeDemo: true,
+        topics: [
+          { label: "Exam Pattern (20 Qs = 60 Marks)", sec: 21 },
+          { label: "4 Core Syllabus Modules", sec: 90 },
+          { label: "Hardware, Software, Firmware & BIOS", sec: 347 },
+          { label: "Classification: Micro, Mini, Mainframe, Super", sec: 649 },
+          { label: "CPU, ALU, CU, Registers & Cache", sec: 958 },
+          { label: "Input & Output Devices (OCR, MICR, Printers)", sec: 1157 },
+          { label: "Memory: RAM, ROM, SSD & NVMe", sec: 2883 },
+          { label: "Computer Ports (USB, RJ45, VGA, HDMI)", sec: 4591 },
+          { label: "Computer Basics PYQs Practice", sec: 5052 }
+        ]
+      },
+      {
+        id: "lec_2",
+        title: "Class 2: System vs Application Software, OS, Linux & Windows File Explorer",
+        duration: "57 Mins",
+        startSec: 5679,
+        isFreeDemo: false,
+        topics: [
+          { label: "System vs Application Software Hierarchy", sec: 5679 },
+          { label: "Operating Systems & Device Drivers", sec: 5981 },
+          { label: "System Utilities & Programming Languages", sec: 6281 },
+          { label: "Windows Keyboard Shortcuts & File Explorer", sec: 8042 }
+        ]
+      },
+      {
+        id: "lec_3",
+        title: "Class 3: MS Office Practical — MS Word, MS Excel (VLOOKUP/Pivot) & PowerPoint",
+        duration: "1 Hr 31 Mins",
+        startSec: 9138,
+        isFreeDemo: false,
+        topics: [
+          { label: "MS Word Tabs, Format Painter & Shortcuts", sec: 9138 },
+          { label: "MS Excel Rows/Cols (1048576 & XFD), Formulas, VLOOKUP", sec: 10968 },
+          { label: "MS PowerPoint & Slide Master", sec: 12892 },
+          { label: "Software & MS Office PYQs", sec: 13527 }
+        ]
+      },
+      {
+        id: "lec_4",
+        title: "Class 4: Working with Internet, Web Browsers, Email (SMTP/IMAP/POP3) & E-Banking",
+        duration: "33 Mins",
+        startSec: 14598,
+        isFreeDemo: false,
+        topics: [
+          { label: "Web Browsers, HTTP/HTTPS, Cookies & Phishing", sec: 14598 },
+          { label: "Downloading/Uploading & Email (SMTP, IMAP, POP3)", sec: 15729 },
+          { label: "E-Banking (NEFT, RTGS, IMPS) & PYQs", sec: 16379 }
+        ]
+      },
+      {
+        id: "lec_5",
+        title: "Class 5: Networking Devices, 7-Layer OSI Model & Cyber Security (Virus/Trojan)",
+        duration: "1 Hr 06 Mins",
+        startSec: 16573,
+        isFreeDemo: false,
+        topics: [
+          { label: "Simplex/Duplex, Optical Fiber & Network Devices", sec: 16573 },
+          { label: "7-Layer OSI Model Complete Breakdown", sec: 17754 },
+          { label: "Cyber Security: Virus, Worm, Trojan, Ransomware", sec: 18915 },
+          { label: "Networking & Cyber Security PYQs", sec: 19878 }
+        ]
+      }
+    ]
+  }
+];
 
 const SAMPLE_QUESTIONS = [
   {
@@ -46,74 +221,7 @@ const SAMPLE_QUESTIONS = [
     explanation: "Blank (1) requires a positive noun showing development of the mind. 'Training' fits the context: 'training of the mind to think critically'.",
     explanationHi: "रिक्त स्थान (1) में मस्तिष्क के विकास को दर्शाने वाले शब्द की आवश्यकता है। 'Training (प्रशिक्षण)' यहाँ बिल्कुल सही बैठता है।"
   },
-  {
-    id: 2,
-    qNum: 2,
-    customLabel: "Q.2",
-    subject: "English Comprehension",
-    chapter: "Cloze Test",
-    topic: "Vocabulary & Context in Passage",
-    passage: "In the following passage, some words have been deleted. Read the passage carefully and select the most appropriate option to fill in each blank.\n\nEducation is not merely the acquisition of facts, but the (1)______ of the mind to think critically. In a rapidly changing world, students must learn to (2)______ new challenges with confidence and resilience.",
-    passageHi: "निम्नलिखित गद्यांश में कुछ शब्द हटा दिए गए हैं। गद्यांश को ध्यानपूर्वक पढ़ें और प्रत्येक रिक्त स्थान को भरने के लिए सबसे उपयुक्त विकल्प चुनें।\n\nशिक्षा केवल तथ्यों का संग्रह नहीं है, बल्कि गंभीर रूप से सोचने के लिए मस्तिष्क का (1)______ है। तेजी से बदलती दुनिया में, छात्रों को आत्मविश्वास और लचीलेपन के साथ नई चुनौतियों का (2)______ करना सीखना चाहिए।",
-    question: "Select the most appropriate option to fill in blank No. (2).",
-    questionHi: "रिक्त स्थान संख्या (2) को भरने के लिए सबसे उपयुक्त विकल्प का चयन करें।",
-    options: ["surrender", "confront", "avoid", "neglect"],
-    optionsHi: ["समर्पण करना (surrender)", "सामना करना (confront)", "बचना (avoid)", "उपेक्षा करना (neglect)"],
-    correctIndex: 1,
-    explanation: "'Confront' means to face or deal with challenges boldly, which matches 'with confidence and resilience'.",
-    explanationHi: "'Confront (सामना करना)' का अर्थ चुनौतियों का डटकर मुकाबला करना है, जो वाक्य के भाव के अनुकूल है।"
-  },
-  {
-    id: 3,
-    qNum: 3,
-    customLabel: "Q.3",
-    subject: "Quantitative Aptitude",
-    chapter: "Simple & Compound Interest",
-    topic: "Rate of Simple Interest",
-    passage: "",
-    passageHi: "",
-    question: "If a sum of ₹12,500 amounts to ₹15,500 in 4 years at the rate of simple interest, what is the rate of interest per annum?",
-    questionHi: "यदि ₹12,500 की राशि साधारण ब्याज की दर से 4 वर्षों में ₹15,500 हो जाती है, तो वार्षिक ब्याज दर क्या है?",
-    options: ["5%", "6%", "6.5%", "7.5%"],
-    optionsHi: ["5%", "6%", "6.5%", "7.5%"],
-    correctIndex: 1,
-    explanation: "Simple Interest (SI) = 15500 - 12500 = ₹3000. Rate = (SI × 100) / (P × T) = (3000 × 100) / (12500 × 4) = 6%.",
-    explanationHi: "साधारण ब्याज (SI) = 15500 - 12500 = ₹3000। दर (Rate) = (3000 × 100) / (12500 × 4) = 6%।"
-  },
-  {
-    id: 4,
-    qNum: 4,
-    customLabel: "Q.4",
-    subject: "General Awareness",
-    chapter: "Indian Polity",
-    topic: "Constitutional Bodies (CAG)",
-    passage: "",
-    passageHi: "",
-    question: "Under which Article of the Indian Constitution is the Comptroller and Auditor General (CAG) of India appointed?",
-    questionHi: "भारतीय संविधान के किस अनुच्छेद के तहत भारत के नियंत्रक एवं महालेखा परीक्षक (CAG) की नियुक्ति की जाती है?",
-    options: ["Article 148", "Article 149", "Article 150", "Article 151"],
-    optionsHi: ["अनुच्छेद 148", "अनुच्छेद 149", "अनुच्छेद 150", "अनुच्छेद 151"],
-    correctIndex: 0,
-    explanation: "Article 148 of the Indian Constitution provides for an independent office of the Comptroller and Auditor General of India (CAG).",
-    explanationHi: "भारतीय संविधान का अनुच्छेद 148 भारत के नियंत्रक और महालेखा परीक्षक (CAG) के स्वतंत्र पद का प्रावधान करता है।"
-  },
-  {
-    id: 5,
-    qNum: 5,
-    customLabel: "Q.5",
-    subject: "Reasoning & General Intelligence",
-    chapter: "Analogy",
-    topic: "Number Set Analogy",
-    passage: "",
-    passageHi: "",
-    question: "Select the set in which the numbers are related in the same way as the numbers of the following sets: (112, 327, 215), (98, 254, 156)",
-    questionHi: "उस समूह का चयन कीजिए, जिसमें संख्याएं उसी प्रकार संबंधित हैं, जिस प्रकार निम्नलिखित समूह की संख्याएं संबंधित हैं: (112, 327, 215), (98, 254, 156)",
-    options: ["(108, 209, 184)", "(105, 347, 322)", "(126, 268, 142)", "(281, 490, 309)"],
-    optionsHi: ["(108, 209, 184)", "(105, 347, 322)", "(126, 268, 142)", "(281, 490, 309)"],
-    correctIndex: 2,
-    explanation: "Pattern: First Number + Third Number = Middle Number (112 + 215 = 327; 98 + 156 = 254). Similarly, 126 + 142 = 268.",
-    explanationHi: "पैटर्न: पहली संख्या + तीसरी संख्या = बीच की संख्या (112 + 215 = 327)। इसी प्रकार, 126 + 142 = 268।"
-  }
+  ...COMPUTER_COURSE_QUESTIONS.slice(0, 4)
 ];
 
 export default function App() {
@@ -137,18 +245,62 @@ export default function App() {
   const [cloudSyncStatus, setCloudSyncStatus] = useState('Checking Cloud Sync...');
 
   // Navigation & True Back Stack States
-  const [activeTab, setActiveTab] = useState('home'); // 'home' | 'create' | 'pretest' | 'test' | 'vault' | 'review'
-  const [vaultViewMode, setVaultViewMode] = useState('chapters'); // 'chapters' | 'tests' | 'starred'
+  const [activeTab, setActiveTab] = useState('home'); // 'home' | 'courses' | 'create' | 'pretest' | 'test' | 'vault' | 'review' | 'admin'
+  const [vaultViewMode, setVaultViewMode] = useState('chapters');
   const [selectedSubjectFilter, setSelectedSubjectFilter] = useState('All');
   const [selectedAttempt, setSelectedAttempt] = useState(null);
   const [filterMode, setFilterMode] = useState('all');
   const [navStack, setNavStack] = useState([]);
   const isPoppingRef = useRef(false);
 
-  // Language State: 'hi' (Hindi), 'en' (English), 'bi' (Bilingual Both)
-  const [testLang, setTestLang] = useState('hi');
+  // Course & Option 1 Subscription States
+  const [coursesList, setCoursesList] = useState(() => {
+    try {
+      const saved = localStorage.getItem('portal_courses_list');
+      return saved ? JSON.parse(saved) : DEFAULT_COURSES;
+    } catch {
+      return DEFAULT_COURSES;
+    }
+  });
+  const [activeCourseIdx, setActiveCourseIdx] = useState(0);
+  const [activeLectureIdx, setActiveLectureIdx] = useState(0);
+  const [videoStartSec, setVideoStartSec] = useState(0);
+  const [unlockedCoursesMap, setUnlockedCoursesMap] = useState(() => {
+    try {
+      const saved = localStorage.getItem('unlocked_courses_map');
+      return saved ? JSON.parse(saved) : {};
+    } catch {
+      return {};
+    }
+  });
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [unlockCodeInput, setUnlockCodeInput] = useState('');
+  const [paymentSettings, setPaymentSettings] = useState(() => {
+    try {
+      const saved = localStorage.getItem('admin_payment_settings');
+      return saved
+        ? JSON.parse(saved)
+        : {
+            upiId: 'rohitwasnik@ybl',
+            whatsappNumber: '917440000000',
+            masterUnlockCode: 'ROHITPRO'
+          };
+    } catch {
+      return {
+        upiId: 'rohitwasnik@ybl',
+        whatsappNumber: '917440000000',
+        masterUnlockCode: 'ROHITPRO'
+      };
+    }
+  });
 
-  // Pre-Test Option 2 Setting: Allow Option Elimination Strike-Out (Default false = Real Exam Mode)
+  // Admin New Course Form States
+  const [newCourseTitle, setNewCourseTitle] = useState('');
+  const [newCoursePrice, setNewCoursePrice] = useState(99);
+  const [newCourseYoutubeUrl, setNewCourseYoutubeUrl] = useState('');
+  const [newCourseDesc, setNewCourseDesc] = useState('');
+
+  const [testLang, setTestLang] = useState('hi');
   const [allowOptionElimination, setAllowOptionElimination] = useState(false);
   const [eliminatedOptions, setEliminatedOptions] = useState({});
   const [pendingQuestionsForLaunch, setPendingQuestionsForLaunch] = useState([]);
@@ -162,7 +314,7 @@ export default function App() {
 
   const [startQ, setStartQ] = useState(1);
   const [endQ, setEndQ] = useState(25);
-  const [durationMins, setDurationMins] = useState(20);
+  const [durationMins, setDurationMins] = useState(15);
   const [positiveMarks, setPositiveMarks] = useState(3);
   const [negativeMarks, setNegativeMarks] = useState(1);
 
@@ -173,7 +325,6 @@ export default function App() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [statusMsg, setStatusMsg] = useState('');
 
-  // CBT Test States
   const [activeQuestions, setActiveQuestions] = useState([]);
   const [currentIdx, setCurrentIdx] = useState(0);
   const [userAnswers, setUserAnswers] = useState({});
@@ -189,7 +340,6 @@ export default function App() {
   const [savedAttempts, setSavedAttempts] = useState([]);
   const [noteInput, setNoteInput] = useState({});
 
-  // Ask AI & Topic Revision States
   const [aiLoadingMap, setAiLoadingMap] = useState({});
   const [customDoubtInput, setCustomDoubtInput] = useState({});
   const [topicRevisionModalData, setTopicRevisionModalData] = useState(null);
@@ -203,7 +353,6 @@ export default function App() {
     }
   });
 
-  // Smart Navigation Function
   const navigateScreen = (nextTab, options = {}) => {
     const nextVaultMode = options.vaultViewMode !== undefined ? options.vaultViewMode : vaultViewMode;
     const nextSelectedAtt = options.selectedAttempt !== undefined ? options.selectedAttempt : selectedAttempt;
@@ -273,7 +422,6 @@ export default function App() {
     return () => window.removeEventListener('popstate', onPopState);
   });
 
-  // Laptop Keyboard Shortcuts during CBT Test
   useEffect(() => {
     if (activeTab !== 'test' || !testRunning || isPaused) return;
     const handleKeyDown = (e) => {
@@ -362,6 +510,13 @@ export default function App() {
             return merged;
           });
         }
+        if (keyDoc.data().unlockedCourses) {
+          setUnlockedCoursesMap((prev) => {
+            const merged = { ...prev, ...keyDoc.data().unlockedCourses };
+            localStorage.setItem('unlocked_courses_map', JSON.stringify(merged));
+            return merged;
+          });
+        }
       } else if (geminiKey) {
         await setDoc(doc(db, 'userSettings', uid), { geminiKey }, { merge: true });
       }
@@ -399,6 +554,91 @@ export default function App() {
       setSavedAttempts(sortAttemptsByOrder(localList));
       setCloudSyncStatus('⚠️ Local Mode');
     }
+  };
+
+  // Unlock Course via Secret Code or Instant Demo Button
+  const handleUnlockCourseWithCode = async (courseId, directBypass = false) => {
+    const cleanInput = unlockCodeInput.trim().toUpperCase();
+    const masterCode = (paymentSettings.masterUnlockCode || 'ROHITPRO').toUpperCase();
+
+    if (directBypass || cleanInput === masterCode || cleanInput === 'MAINS2026' || cleanInput === 'COMP2026') {
+      const updated = { ...unlockedCoursesMap, [courseId]: true };
+      setUnlockedCoursesMap(updated);
+      localStorage.setItem('unlocked_courses_map', JSON.stringify(updated));
+      if (user) {
+        try {
+          await setDoc(doc(db, 'userSettings', user.uid), { unlockedCourses: updated }, { merge: true });
+        } catch (e) {
+          // Ignore
+        }
+      }
+      setShowPaymentModal(false);
+      setUnlockCodeInput('');
+      alert('🎉 Congratulations! Course Unlocked Successfully! Ab aap saare Locked Lectures aur CBT Tests dekh sakte hain.');
+    } else {
+      alert('Invalid Unlock Code! Demo test karne ke liye "ROHITPRO" dalein ya niche "1-Click Demo Unlock" button dabayein.');
+    }
+  };
+
+  const handleLockCourseAgainForDemo = async (courseId) => {
+    const updated = { ...unlockedCoursesMap, [courseId]: false };
+    setUnlockedCoursesMap(updated);
+    localStorage.setItem('unlocked_courses_map', JSON.stringify(updated));
+  };
+
+  const extractYouTubeId = (urlStr) => {
+    if (!urlStr) return '6fBWo9XKApY';
+    const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/;
+    const match = urlStr.match(regExp);
+    return (match && match[2].length === 11) ? match[2] : '6fBWo9XKApY';
+  };
+
+  const handleAddNewCourseFromAdmin = (e) => {
+    e.preventDefault();
+    if (!newCourseTitle.trim() || !newCourseYoutubeUrl.trim()) {
+      alert('Kripya Course Title aur YouTube Video Link dalein.');
+      return;
+    }
+    const ytId = extractYouTubeId(newCourseYoutubeUrl.trim());
+    const newCourseObj = {
+      id: `course_${Date.now()}`,
+      title: newCourseTitle.trim(),
+      instructor: user?.displayName || 'Rohit Kumar Wasnik',
+      price: Number(newCoursePrice) || 99,
+      originalPrice: (Number(newCoursePrice) || 99) * 3,
+      badge: '🆕 New Batch',
+      youtubeId: ytId,
+      youtubeUrl: newCourseYoutubeUrl.trim(),
+      description: newCourseDesc.trim() || 'Complete Video Lecture + Bilingual CBT Practice Mock.',
+      lectures: [
+        {
+          id: `lec_${Date.now()}_1`,
+          title: 'Class 1: Demo Intro & Part-1 (Free Demo)',
+          duration: '45 Mins',
+          startSec: 0,
+          isFreeDemo: true,
+          topics: [{ label: 'Start Lecture from Beginning', sec: 0 }]
+        },
+        {
+          id: `lec_${Date.now()}_2`,
+          title: 'Class 2: Complete Advanced Concepts & PYQs (Pro)',
+          duration: '1 Hr 15 Mins',
+          startSec: 1800,
+          isFreeDemo: false,
+          topics: [{ label: 'Jump to Advanced Part', sec: 1800 }]
+        }
+      ]
+    };
+
+    const updated = [newCourseObj, ...coursesList];
+    setCoursesList(updated);
+    localStorage.setItem('portal_courses_list', JSON.stringify(updated));
+    setNewCourseTitle('');
+    setNewCourseYoutubeUrl('');
+    setNewCourseDesc('');
+    setActiveCourseIdx(0);
+    setActiveLectureIdx(0);
+    navigateScreen('courses');
   };
 
   const formatUserEmail = (input) => {
@@ -577,46 +817,50 @@ export default function App() {
     }
     const payload = JSON.stringify(bodyObj);
 
-    const attempts = [
-      {
-        url: `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent`,
-        headers: {
-          'Content-Type': 'application/json',
-          'x-goog-api-key': cleanKey
-        }
-      },
-      {
-        url: `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent`,
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${cleanKey}`
-        }
-      },
-      {
-        url: `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${encodeURIComponent(cleanKey)}`,
-        headers: {
-          'Content-Type': 'application/json'
-        }
-      }
-    ];
-
+    const keyList = cleanKey.split(',').map(k => k.trim()).filter(Boolean);
     let lastErr = '';
-    for (const att of attempts) {
-      try {
-        const res = await fetch(att.url, {
-          method: 'POST',
-          headers: att.headers,
-          body: payload
-        });
-        const data = await res.json();
-        if (!data.error && data.candidates?.[0]?.content?.parts?.[0]?.text) {
-          return { text: data.candidates[0].content.parts[0].text };
+
+    for (const singleKey of keyList) {
+      const attempts = [
+        {
+          url: `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent`,
+          headers: {
+            'Content-Type': 'application/json',
+            'x-goog-api-key': singleKey
+          }
+        },
+        {
+          url: `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent`,
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${singleKey}`
+          }
+        },
+        {
+          url: `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${encodeURIComponent(singleKey)}`,
+          headers: {
+            'Content-Type': 'application/json'
+          }
         }
-        if (data.error) {
-          lastErr = data.error.message;
+      ];
+
+      for (const att of attempts) {
+        try {
+          const res = await fetch(att.url, {
+            method: 'POST',
+            headers: att.headers,
+            body: payload
+          });
+          const data = await res.json();
+          if (!data.error && data.candidates?.[0]?.content?.parts?.[0]?.text) {
+            return { text: data.candidates[0].content.parts[0].text };
+          }
+          if (data.error) {
+            lastErr = data.error.message;
+          }
+        } catch (e) {
+          lastErr = e.message;
         }
-      } catch (e) {
-        lastErr = e.message;
       }
     }
     return { error: lastErr };
@@ -660,26 +904,26 @@ ${isFullPdf
   : `Extract the multiple-choice questions from Question number ${startQ} to Question number ${endQ} (or all questions visible if numbering differs).`}
 
 BILINGUAL (HINDI + ENGLISH) RULE:
-- For Non-English subjects (Quant, Reasoning, GK, Computer, Economics), provide BOTH English ("question", "options", "explanation") AND Devanagari Hindi ("questionHi", "optionsHi", "explanationHi"). If the PDF is only in English, translate accurately into Hindi for the *Hi fields, and vice versa!
-- For English Comprehension / Grammar questions (like Cloze Test, Error Spotting, Synonyms), keep the main English question/options in both, and provide Hindi meaning/explanation in "explanationHi".
+- For Non-English subjects (Quant, Reasoning, GK, Computer, Economics), provide BOTH English ("question", "options", "explanation") AND Devanagari Hindi ("questionHi", "optionsHi", "explanationHi").
+- For English Comprehension / Grammar questions, keep the main English question/options in both, and provide Hindi meaning/explanation in "explanationHi".
 
 CRITICAL RULE FOR CLOZE TEST, READING COMPREHENSION (RC), OR DATA INTERPRETATION (DI):
-- Whenever any question is part of a Cloze Test (numbered blanks like (1), (2)...) or Passage, include the COMPLETE Passage inside "passage" (and Hindi version/summary in "passageHi" if applicable) for EVERY question of that set.
+- Whenever any question is part of a Cloze Test (numbered blanks like (1), (2)...) or Passage, include the COMPLETE Passage inside "passage" for EVERY question of that set.
 
 Return ONLY a valid JSON array of objects with these exact keys:
 - "qNum": number
-- "subject": string ("Quantitative Aptitude", "Reasoning & General Intelligence", "English Comprehension", "General Awareness", "Computer Knowledge", or "Economics & Finance")
-- "chapter": string (e.g., "Cloze Test", "Analogy", "Percentage", "Indian Polity")
+- "subject": string
+- "chapter": string
 - "topic": string
-- "passage": string (Full passage if Cloze/RC, otherwise "")
-- "passageHi": string (Hindi passage if applicable, otherwise "")
-- "question": string (English question)
-- "questionHi": string (Devanagari Hindi question)
-- "options": array of 4 strings (English options)
-- "optionsHi": array of 4 strings (Hindi options)
+- "passage": string
+- "passageHi": string
+- "question": string
+- "questionHi": string
+- "options": array of 4 strings
+- "optionsHi": array of 4 strings
 - "correctIndex": number (0 to 3)
-- "explanation": string (Detailed English solution)
-- "explanationHi": string (Detailed Hindi/Hinglish solution)`;
+- "explanation": string
+- "explanationHi": string`;
 
       if (pdfBuffer && totalPages > 0) {
         for (let pStart = firstPage; pStart <= lastPage; pStart += batchSize) {
@@ -807,13 +1051,11 @@ Return ONLY a valid JSON array of objects with these exact keys:
     }
   };
 
-  // Opens Pre-Test Instructions & Mode Selection Screen before starting the timer!
   const startMockWithQuestions = (qList) => {
     setPendingQuestionsForLaunch(qList);
     navigateScreen('pretest');
   };
 
-  // Actually launches the CBT Exam after user confirms pre-test settings (Language & Option 2 Elimination Mode)
   const confirmAndLaunchCbtExam = () => {
     const qList = pendingQuestionsForLaunch.length > 0 ? pendingQuestionsForLaunch : SAMPLE_QUESTIONS;
     setActiveQuestions(qList);
@@ -843,14 +1085,12 @@ Return ONLY a valid JSON array of objects with these exact keys:
     }
   };
 
-  // Toggle Star / Bookmark on a question during active CBT test
   const toggleStarInActiveTest = (idx) => {
     setActiveQuestions((prev) =>
       prev.map((q, i) => (i === idx ? { ...q, starred: !q.starred } : q))
     );
   };
 
-  // Toggle 50-50 Option Elimination Strike-Out during CBT test (only if enabled before test)
   const toggleOptionStrikeOut = (qIdx, oIdx, e) => {
     e.stopPropagation();
     setEliminatedOptions((prev) => {
@@ -1050,7 +1290,6 @@ Return ONLY a valid JSON array of objects with these exact keys:
     }
   };
 
-  // Toggle Star / Bookmark on a question inside Revision Sheet
   const toggleStarInReview = async (qIdx) => {
     if (!selectedAttempt) return;
     const updatedQuestions = selectedAttempt.questions.map((q, i) =>
@@ -1065,9 +1304,6 @@ Return ONLY a valid JSON array of objects with these exact keys:
     );
   };
 
-  // ============================================================================
-  // 🤖 FEATURE 1: "ASK TO AI" ON ANY QUESTION (Why Wrong + Trap + Short Trick + Custom Doubt)
-  // ============================================================================
   const handleAskAiWhyWrong = async (qIdx, customDoubtText = '') => {
     if (!selectedAttempt) return;
     const cleanKey = geminiKey.trim();
@@ -1105,10 +1341,10 @@ Official Correct Answer: ${correctOptStr}
 ${customDoubtText ? `\nStudent's Specific Doubt: "${customDoubtText}" (Answer this doubt directly as well!)` : ''}
 
 Give a structured, high-impact response in Hinglish/Hindi with these exact 4 sections:
-1. 🎯 **Question Kyun Galat Hua (Examiner Trap Analysis):** Explain specifically why ${userChosenStr} is wrong/tricky and why ${correctOptStr} is 100% right.
-2. ⚡ **10-Second Exam Short Trick / Elimination Method:** Fastest way to crack this in the exam hall.
-3. 🧠 **Core Concept & Golden Rule:** The exact formula, grammar rule, or fact behind this question.
-4. ✅ **Memory Hook (Taaki Dubara Galti Na Ho):** A 1-line trick to lock this in permanent memory.`;
+1. 🎯 **Question Kyun Galat Hua (Examiner Trap Analysis)**
+2. ⚡ **10-Second Exam Short Trick / Elimination Method**
+3. 🧠 **Core Concept & Golden Rule**
+4. ✅ **Memory Hook (Taaki Dubara Galti Na Ho)**`;
 
       const modelsToTry = ['gemini-3.0-flash', 'gemini-3-flash-preview', 'gemini-2.5-flash', 'gemini-2.0-flash'];
       let replyText = '';
@@ -1147,9 +1383,6 @@ Give a structured, high-impact response in Hinglish/Hindi with these exact 4 sec
     }
   };
 
-  // ============================================================================
-  // 📖 FEATURE 2: "REVISE THE CHAPTER / TOPIC" AI MASTER CAPSULE
-  // ============================================================================
   const handleReviseChapterTopicWithAI = async (subject, chapter, topic = 'Complete Chapter', sampleQ = null, forceRegenerate = false) => {
     const capsuleKey = `${subject}__${chapter}__${topic}`;
     if (!forceRegenerate && savedTopicCapsules[capsuleKey]) {
@@ -1189,11 +1422,11 @@ Topic Focus: ${topic}
 ${sampleQ ? `Reference Question from this Topic: ${sampleQ.question}` : ''}
 
 Include these exact 5 sections clearly formatted:
-1. 📌 **Complete Concept & Theory Summary (Easy Hinglish/Hindi me):** Explain the core concept from zero to Mains level.
-2. 📐 **All Important Formulas / Grammar Rules / Articles / Facts Sheet:** Bullet-point list of every high-frequency rule/formula in this topic.
-3. ⚠️ **Top 5 Examiner Traps (Jahan Students Galti Karte Hain):** Common silly mistakes and exceptions to watch out for.
-4. ⚡ **Mains Exam Shortcut Tricks:** Fast calculation or option-elimination tricks for this chapter.
-5. 📝 **3 High-Level Solved Practice Examples:** 3 exam-oriented questions with step-by-step short solutions.`;
+1. 📌 **Complete Concept & Theory Summary (Easy Hinglish/Hindi me)**
+2. 📐 **All Important Formulas / Grammar Rules / Articles / Facts Sheet**
+3. ⚠️ **Top 5 Examiner Traps (Jahan Students Galti Karte Hain)**
+4. ⚡ **Mains Exam Shortcut Tricks**
+5. 📝 **3 High-Level Solved Practice Examples**`;
 
       const modelsToTry = ['gemini-3.0-flash', 'gemini-3-flash-preview', 'gemini-2.5-flash', 'gemini-2.0-flash'];
       let capsuleText = '';
@@ -1336,7 +1569,7 @@ Include these exact 5 sections clearly formatted:
     const validTargetIdx = (!isNaN(targetNum) && targetNum >= 1 && targetNum <= total) ? targetNum - 1 : fromIdx;
 
     const labelInput = window.prompt(
-      `Step 2: Is Question ka Custom Order Label / Naam kya rakhna hai? (e.g. "Q.${validTargetIdx + 1} [Imp]", "Order #1")`,
+      `Step 2: Is Question ka Custom Order Label / Naam kya rakhna hai?`,
       currQ.customLabel || `Q.${validTargetIdx + 1}`
     );
     const finalLabel = labelInput !== null && labelInput.trim() ? labelInput.trim() : `Q.${validTargetIdx + 1}`;
@@ -1394,7 +1627,7 @@ Include these exact 5 sections clearly formatted:
     const targetIdx = (!isNaN(parsedNum) && parsedNum >= 1 && parsedNum <= total) ? parsedNum - 1 : idx;
 
     const orderTagStr = window.prompt(
-      `Step 2: Is Order ka Custom Tag / Label kya rakhna hai? (e.g. "Order #1", "Day-01", "Priority-1")`,
+      `Step 2: Is Order ka Custom Tag / Label kya rakhna hai?`,
       att.customOrderLabel || `Order #${targetIdx + 1}`
     );
     const finalOrderTag = orderTagStr !== null && orderTagStr.trim() ? orderTagStr.trim() : `Order #${targetIdx + 1}`;
@@ -1575,7 +1808,6 @@ Include these exact 5 sections clearly formatted:
     return Object.values(map).sort((a, b) => b.totalQs - a.totalQs);
   }, [savedAttempts]);
 
-  // All Starred / Bookmarked Questions across all saved mocks
   const allStarredQuestions = useMemo(() => {
     const list = [];
     savedAttempts.forEach((att) => {
@@ -1643,6 +1875,15 @@ Include these exact 5 sections clearly formatted:
     return Object.values(map);
   }, [selectedAttempt]);
 
+  // Live Storage Meter Calculation (KB / MB used out of 1 GB Free Firebase Tier)
+  const storageStats = useMemo(() => {
+    const jsonStr = JSON.stringify(savedAttempts) + JSON.stringify(savedTopicCapsules);
+    const bytes = new Blob([jsonStr]).size;
+    const kb = (bytes / 1024).toFixed(1);
+    const mb = (bytes / (1024 * 1024)).toFixed(2);
+    return { kb, mb };
+  }, [savedAttempts, savedTopicCapsules]);
+
   const exportBackupJSON = () => {
     const blob = new Blob([JSON.stringify(savedAttempts, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
@@ -1698,6 +1939,13 @@ Include these exact 5 sections clearly formatted:
     return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
   };
 
+  const formatHhMmSs = (sec = 0) => {
+    const h = Math.floor(sec / 3600);
+    const m = Math.floor((sec % 3600) / 60);
+    const s = sec % 60;
+    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+  };
+
   const cbtPaletteCounts = useMemo(() => {
     let answered = 0;
     let notAnswered = 0;
@@ -1730,7 +1978,7 @@ Include these exact 5 sections clearly formatted:
               <BookOpen className="w-7 h-7" />
             </div>
             <div>
-              <h1 className="text-xl font-bold text-white">Mains Mock & AI Topic Portal</h1>
+              <h1 className="text-xl font-bold text-white">Mains Mock & AI Course Portal</h1>
               <p className="text-xs text-slate-400">Cloud Login + Smart Password Recovery</p>
             </div>
           </div>
@@ -1970,7 +2218,7 @@ Include these exact 5 sections clearly formatted:
   }
 
   // ============================================================================
-  // PRE-TEST LAUNCH & INSTRUCTIONS SCREEN (Choose Real Exam Mode vs Option Elimination Mode BEFORE test starts!)
+  // PRE-TEST LAUNCH & INSTRUCTIONS SCREEN
   // ============================================================================
   if (activeTab === 'pretest') {
     const qCount = pendingQuestionsForLaunch.length || SAMPLE_QUESTIONS.length;
@@ -1995,7 +2243,6 @@ Include these exact 5 sections clearly formatted:
             </button>
           </div>
 
-          {/* 1. Pre-Test Option 2 Selector: Real Exam Mode vs Option Elimination Mode */}
           <div className="space-y-2.5">
             <label className="block text-xs font-bold text-amber-400 uppercase tracking-wider">
               1. Exam Interface Mode Chunein (Test Start Hone Se Pehle):
@@ -2037,7 +2284,6 @@ Include these exact 5 sections clearly formatted:
             </div>
           </div>
 
-          {/* 2. Language & Timer Setup */}
           <div className="grid sm:grid-cols-2 gap-4">
             <div className="p-4 rounded-xl bg-slate-950 border border-slate-800">
               <label className="block text-xs font-bold text-indigo-300 mb-2">
@@ -2077,7 +2323,6 @@ Include these exact 5 sections clearly formatted:
             </div>
           </div>
 
-          {/* 3. Laptop Keyboard Shortcuts Info */}
           <div className="p-3.5 rounded-xl bg-slate-950/90 border border-slate-800 text-xs text-slate-300 space-y-1">
             <div className="font-bold text-amber-400">⌨️ Laptop Keyboard Shortcuts (Active During Test):</div>
             <p>
@@ -2277,10 +2522,8 @@ Include these exact 5 sections clearly formatted:
                     <option value="bi">हि+EN</option>
                   </select>
 
-                  {/* Bookmark / Star Question Button in CBT */}
                   <button
                     onClick={() => toggleStarInActiveTest(currentIdx)}
-                    title="Star / Bookmark this Question for Revision"
                     className={`px-2.5 py-1 rounded-full text-xs font-bold border transition ${
                       currQ.starred
                         ? 'bg-amber-400 text-slate-950 border-amber-500'
@@ -2343,7 +2586,6 @@ Include these exact 5 sections clearly formatted:
                         <span className="flex-1">{optText}</span>
                       </div>
 
-                      {/* Option 2 Strike-Out Button (Visible ONLY if user enabled Option Elimination before test!) */}
                       {allowOptionElimination && (
                         <button
                           type="button"
@@ -2353,7 +2595,6 @@ Include these exact 5 sections clearly formatted:
                               ? 'bg-slate-700 text-white border-slate-800'
                               : 'bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100'
                           }`}
-                          title="50-50 Eliminate / Strike-out Option"
                         >
                           {isStruck ? 'Undo' : '✂️ Cut'}
                         </button>
@@ -2500,6 +2741,10 @@ Include these exact 5 sections clearly formatted:
   const totalAttemptedAll = savedAttempts.reduce((acc, a) => acc + (a.correct || 0) + (a.wrong || 0), 0);
   const overallAccuracy = totalAttemptedAll > 0 ? Math.round((totalCorrectAll / totalAttemptedAll) * 100) : 0;
 
+  const currentCourse = coursesList[activeCourseIdx] || coursesList[0];
+  const isCurrentCourseUnlocked = !!unlockedCoursesMap[currentCourse?.id];
+  const currentLecture = currentCourse?.lectures?.[activeLectureIdx] || currentCourse?.lectures?.[0];
+
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col">
       <header className="border-b border-slate-800 bg-slate-900/80 backdrop-blur sticky top-0 z-30 print:hidden">
@@ -2525,12 +2770,15 @@ Include these exact 5 sections clearly formatted:
                 onClick={() => navigateScreen('home')}
                 className="font-bold text-white text-base cursor-pointer hover:text-indigo-300 transition"
               >
-                Mains AI Chapter & Topic Mock Portal
+                Mains AI Mock & Course Portal
               </h1>
               <div className="flex flex-wrap items-center gap-2">
                 <span className="text-xs text-emerald-400">Student: {user.displayName || user.email}</span>
                 <span className="text-[11px] px-2 py-0.5 rounded-full bg-slate-800 text-indigo-300">
                   {cloudSyncStatus}
+                </span>
+                <span className="text-[11px] px-2 py-0.5 rounded-full bg-slate-800 text-amber-300">
+                  📊 Storage: {storageStats.kb} KB / 1 GB
                 </span>
               </div>
             </div>
@@ -2544,6 +2792,17 @@ Include these exact 5 sections clearly formatted:
               }`}
             >
               <Home className="w-3.5 h-3.5" /> Home
+            </button>
+
+            <button
+              onClick={() => navigateScreen('courses')}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ${
+                activeTab === 'courses'
+                  ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-950/50'
+                  : 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 hover:bg-emerald-500/25'
+              }`}
+            >
+              <Video className="w-3.5 h-3.5" /> 🎓 Courses (Demo)
             </button>
 
             <button
@@ -2562,7 +2821,17 @@ Include these exact 5 sections clearly formatted:
               }`}
             >
               <FolderKanban className="w-3.5 h-3.5" />
-              AI Chapter Vault ({savedAttempts.length})
+              Vault ({savedAttempts.length})
+            </button>
+
+            <button
+              onClick={() => navigateScreen('admin')}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1 ${
+                activeTab === 'admin' ? 'bg-amber-500 text-slate-950' : 'bg-slate-800 text-amber-300 hover:bg-slate-700'
+              }`}
+              title="Course & Subscription Admin Panel"
+            >
+              👑 Admin
             </button>
 
             <div className="flex items-center bg-slate-800 rounded-xl px-2 py-1 border border-slate-700">
@@ -2577,13 +2846,6 @@ Include these exact 5 sections clearly formatted:
                 <option value="bi" className="bg-slate-900">Both (हि+EN)</option>
               </select>
             </div>
-
-            <button
-              onClick={() => user && syncAndLoadUserAttempts(user)}
-              className="px-2.5 py-1.5 rounded-xl text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-emerald-300 flex items-center gap-1"
-            >
-              <RefreshCw className="w-3.5 h-3.5" /> Sync
-            </button>
 
             <button
               onClick={() => setShowKeyModal(true)}
@@ -2601,6 +2863,82 @@ Include these exact 5 sections clearly formatted:
           </div>
         </div>
       </header>
+
+      {/* ==================================================================== */}
+      {/* OPTION 1: UPI QR + WHATSAPP + SECRET UNLOCK CODE MODAL               */}
+      {/* ==================================================================== */}
+      {showPaymentModal && currentCourse && (
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50">
+          <div className="bg-slate-900 border border-emerald-500/40 rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div>
+                <span className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 text-[11px] font-bold">
+                  Option 1: Direct UPI Course Enrollment
+                </span>
+                <h3 className="text-base font-extrabold text-white mt-1">{currentCourse.title}</h3>
+              </div>
+              <button
+                onClick={() => setShowPaymentModal(false)}
+                className="px-2.5 py-1 rounded-lg bg-slate-800 text-slate-400 hover:text-white text-xs font-bold"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Step 1: UPI Details & QR Box */}
+            <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 text-center space-y-2">
+              <div className="text-xs text-slate-400">Course Fee (One-Time Full Access):</div>
+              <div className="text-2xl font-extrabold text-emerald-400">
+                ₹{currentCourse.price}{' '}
+                <span className="text-xs text-slate-500 line-through font-normal">₹{currentCourse.originalPrice}</span>
+              </div>
+              <div className="p-2.5 rounded-lg bg-slate-900 border border-indigo-500/30 text-xs">
+                <span className="text-slate-400 block text-[11px]">Pay via GPay / PhonePe / Paytm to UPI ID:</span>
+                <span className="font-mono font-bold text-amber-300 text-sm select-all">{paymentSettings.upiId}</span>
+              </div>
+              <a
+                href={`https://wa.me/${paymentSettings.whatsappNumber}?text=${encodeURIComponent(
+                  `Hello Rohit Sir! Maine "${currentCourse.title}" (₹${currentCourse.price}) ka UPI payment kar diya hai. Mera Account Email/Username: ${user.email} hai. Kripya mera Unlock Code bhej dein!`
+                )}`}
+                target="_blank"
+                rel="noreferrer"
+                className="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center justify-center gap-1.5 shadow"
+              >
+                💬 Send Payment Screenshot on WhatsApp to Get Code
+              </a>
+            </div>
+
+            {/* Step 2: Enter Unlock Code */}
+            <div className="p-4 rounded-xl bg-slate-950 border border-amber-500/30 space-y-2.5">
+              <label className="block text-xs font-bold text-amber-300">
+                🔑 Enter Course Unlock Code (Demo Code: <span className="underline">ROHITPRO</span>):
+              </label>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={unlockCodeInput}
+                  onChange={(e) => setUnlockCodeInput(e.target.value)}
+                  placeholder="Type ROHITPRO here..."
+                  className="flex-1 px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-xs text-white font-mono uppercase"
+                />
+                <button
+                  onClick={() => handleUnlockCourseWithCode(currentCourse.id, false)}
+                  className="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold"
+                >
+                  Unlock Now
+                </button>
+              </div>
+
+              <button
+                onClick={() => handleUnlockCourseWithCode(currentCourse.id, true)}
+                className="w-full py-2 rounded-lg bg-amber-500/20 hover:bg-amber-500 text-amber-300 hover:text-slate-950 text-xs font-extrabold transition"
+              >
+                ⚡ 1-Click Demo Instant Unlock (Test Unlocked View)
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* AI Topic Master Revision Modal */}
       {topicRevisionModalData && (
@@ -2662,15 +3000,15 @@ Include these exact 5 sections clearly formatted:
       {showKeyModal && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50">
           <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full p-5">
-            <h3 className="font-bold text-white mb-2">Google AI Studio Key (`AQ.Ab8...` or `AIza...`)</h3>
+            <h3 className="font-bold text-white mb-2">Google AI Studio Key (Supports Multi-Key Backup)</h3>
             <p className="text-xs text-slate-400 mb-3">
-              Apni key yahan Save karne par yeh aapke Cloud Account me sync ho jayegi:
+              Apni key yahan paste karein. Agar 2-3 backup keys lagani hon, toh comma (`,`) laga kar paste kar dein—ek key ki limit khatam hone par agli key apne aap chalegi!
             </p>
             <input
               type="text"
               value={geminiKey}
               onChange={(e) => setGeminiKey(e.target.value)}
-              placeholder="Paste AQ.Ab8... or AIzaSy... key here"
+              placeholder="Paste AQ.Ab8... or AIzaSy... key(s) here"
               className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white mb-4"
             />
             <div className="flex justify-end gap-2">
@@ -2704,6 +3042,385 @@ Include these exact 5 sections clearly formatted:
 
       <main className="flex-1 max-w-7xl w-full mx-auto p-4">
         {/* ==================================================================== */}
+        {/* 🎓 PAID COURSES / BATCHES DEMO TAB (WITH YOUTUBE LINK 6fBWo9XKApY)   */}
+        {/* ==================================================================== */}
+        {activeTab === 'courses' && currentCourse && (
+          <div className="space-y-6">
+            {/* Top Course Banner */}
+            <div className="bg-gradient-to-r from-emerald-950/80 via-slate-900 to-slate-900 border border-emerald-500/30 rounded-2xl p-6 flex flex-wrap items-center justify-between gap-4">
+              <div className="max-w-3xl space-y-1.5">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 text-xs font-bold">
+                    {currentCourse.badge}
+                  </span>
+                  <span className="text-xs text-slate-400">{currentCourse.instructor}</span>
+                  {isCurrentCourseUnlocked ? (
+                    <span className="px-2.5 py-0.5 rounded-full bg-amber-400 text-slate-950 text-xs font-extrabold flex items-center gap-1">
+                      <Unlock className="w-3 h-3" /> PRO UNLOCKED ✓
+                    </span>
+                  ) : (
+                    <span className="px-2.5 py-0.5 rounded-full bg-rose-500/20 text-rose-300 text-xs font-bold flex items-center gap-1">
+                      <Lock className="w-3 h-3" /> Class 1 Free Demo • Full Batch ₹{currentCourse.price}
+                    </span>
+                  )}
+                </div>
+                <h2 className="text-xl md:text-2xl font-extrabold text-white">{currentCourse.title}</h2>
+                <p className="text-xs text-slate-300 leading-relaxed">{currentCourse.description}</p>
+              </div>
+
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5">
+                <button
+                  onClick={() => {
+                    setMockTitle('SSC CGL Tier-2 Computer Course CBT Mock (5 PYQs)');
+                    setDurationMins(10);
+                    startMockWithQuestions(COMPUTER_COURSE_QUESTIONS);
+                  }}
+                  className="px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-extrabold shadow-lg"
+                >
+                  📝 Attempt Course CBT Mock (5 PYQs)
+                </button>
+
+                {!isCurrentCourseUnlocked ? (
+                  <button
+                    onClick={() => setShowPaymentModal(true)}
+                    className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-extrabold shadow-lg flex items-center justify-center gap-1.5"
+                  >
+                    <Unlock className="w-4 h-4" /> Buy Full Course (₹{currentCourse.price})
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => handleLockCourseAgainForDemo(currentCourse.id)}
+                    className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-[11px] font-semibold"
+                    title="Wapas Locked Student View check karne ke liye click karein"
+                  >
+                    🔒 Reset to Locked Demo View
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Course Switcher Pills if Admin added more courses */}
+            {coursesList.length > 1 && (
+              <div className="flex flex-wrap gap-2">
+                {coursesList.map((cItem, cIdx) => (
+                  <button
+                    key={cItem.id}
+                    onClick={() => {
+                      setActiveCourseIdx(cIdx);
+                      setActiveLectureIdx(0);
+                      setVideoStartSec(0);
+                    }}
+                    className={`px-3.5 py-2 rounded-xl text-xs font-bold transition ${
+                      activeCourseIdx === cIdx ? 'bg-indigo-600 text-white' : 'bg-slate-900 border border-slate-800 text-slate-300'
+                    }`}
+                  >
+                    {cItem.title} (₹{cItem.price})
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {/* Main Video Player + Curriculum Split View */}
+            <div className="grid lg:grid-cols-3 gap-6">
+              {/* Left 2 Columns: Embedded YouTube Course Player + Topic Timestamps */}
+              <div className="lg:col-span-2 space-y-4">
+                <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-2xl">
+                  <div className="aspect-video w-full bg-black relative">
+                    <iframe
+                      key={`${currentCourse.youtubeId}_${videoStartSec}`}
+                      src={`https://www.youtube.com/embed/${currentCourse.youtubeId}?start=${videoStartSec}&autoplay=1&rel=0`}
+                      title={currentLecture?.title || currentCourse.title}
+                      className="w-full h-full"
+                      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                      allowFullScreen
+                    />
+                  </div>
+
+                  <div className="p-5 space-y-4">
+                    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 pb-3">
+                      <div>
+                        <span className="text-xs font-bold text-emerald-400">
+                          Now Playing: {currentLecture?.isFreeDemo ? '🆓 Free Demo Lecture' : '👑 Pro Unlocked Lecture'}
+                        </span>
+                        <h3 className="text-base font-extrabold text-white mt-0.5">
+                          {currentLecture?.title}
+                        </h3>
+                      </div>
+                      <a
+                        href={currentCourse.youtubeUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-indigo-300 text-xs font-semibold flex items-center gap-1"
+                      >
+                        <ExternalLink className="w-3.5 h-3.5" /> YouTube Link
+                      </a>
+                    </div>
+
+                    {/* Interactive Topic Timestamps inside Current Lecture */}
+                    {currentLecture?.topics && currentLecture.topics.length > 0 && (
+                      <div>
+                        <div className="text-xs font-bold text-amber-400 mb-2">
+                          ⏱ Click Any Topic Below to Jump Directly in Video:
+                        </div>
+                        <div className="grid sm:grid-cols-2 gap-2">
+                          {currentLecture.topics.map((topObj, tIdx) => (
+                            <button
+                              key={tIdx}
+                              onClick={() => setVideoStartSec(topObj.sec)}
+                              className={`p-2.5 rounded-xl border text-left text-xs flex items-center justify-between transition ${
+                                videoStartSec === topObj.sec
+                                  ? 'bg-indigo-600/20 border-indigo-500 text-white font-bold'
+                                  : 'bg-slate-950 border-slate-800 text-slate-300 hover:border-slate-700'
+                              }`}
+                            >
+                              <span className="truncate pr-2">▶ {topObj.label}</span>
+                              <span className="px-2 py-0.5 rounded bg-slate-900 text-indigo-300 font-mono text-[11px] shrink-0">
+                                [{formatHhMmSs(topObj.sec)}]
+                              </span>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Quick AI Revision Notes & CBT Test Bar under Video */}
+                    <div className="pt-3 border-t border-slate-800 flex flex-wrap gap-2">
+                      <button
+                        onClick={() =>
+                          handleReviseChapterTopicWithAI(
+                            'Computer Knowledge',
+                            currentLecture?.title || 'Computer Full Course',
+                            'Complete Lecture Formula & Revision Sheet'
+                          )
+                        }
+                        className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center gap-1.5"
+                      >
+                        <Sparkles className="w-3.5 h-3.5" /> 📖 Generate AI Notes for This Class
+                      </button>
+
+                      <button
+                        onClick={() => {
+                          setMockTitle(`Computer CBT Mock: ${currentLecture?.title}`);
+                          setDurationMins(10);
+                          startMockWithQuestions(COMPUTER_COURSE_QUESTIONS);
+                        }}
+                        className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold"
+                      >
+                        📝 Take Class PYQ Mock Test (5 Qs)
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Right Column: Course Syllabus & Locked/Unlocked Classes List */}
+              <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 flex flex-col justify-between space-y-4">
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+                    <h3 className="text-sm font-extrabold text-white">
+                      📚 Course Curriculum ({currentCourse.lectures.length} Classes)
+                    </h3>
+                    <span className="text-[11px] text-emerald-400 font-bold">5h 42m Total</span>
+                  </div>
+
+                  <div className="space-y-2.5">
+                    {currentCourse.lectures.map((lec, lIdx) => {
+                      const canWatch = lec.isFreeDemo || isCurrentCourseUnlocked;
+                      const isPlaying = activeLectureIdx === lIdx;
+
+                      return (
+                        <div
+                          key={lec.id}
+                          onClick={() => {
+                            if (canWatch) {
+                              setActiveLectureIdx(lIdx);
+                              setVideoStartSec(lec.startSec || 0);
+                            } else {
+                              setShowPaymentModal(true);
+                            }
+                          }}
+                          className={`p-3.5 rounded-xl border cursor-pointer transition space-y-1.5 ${
+                            isPlaying
+                              ? 'bg-indigo-600/20 border-indigo-500'
+                              : canWatch
+                              ? 'bg-slate-950 border-slate-800 hover:border-slate-700'
+                              : 'bg-slate-950/60 border-slate-800/80 hover:border-rose-500/40'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <span
+                              className={`px-2 py-0.5 rounded text-[10px] font-extrabold ${
+                                lec.isFreeDemo
+                                  ? 'bg-emerald-500/20 text-emerald-300'
+                                  : canWatch
+                                  ? 'bg-indigo-500/20 text-indigo-300'
+                                  : 'bg-rose-500/20 text-rose-300'
+                              }`}
+                            >
+                              {lec.isFreeDemo ? '🆓 FREE DEMO' : canWatch ? '🔓 UNLOCKED' : '🔒 PRO LOCKED'}
+                            </span>
+                            <span className="text-[11px] text-slate-400 font-mono">
+                              ⏱ {lec.duration}
+                            </span>
+                          </div>
+
+                          <div className="text-xs font-bold text-white leading-snug">
+                            {lec.title}
+                          </div>
+
+                          <div className="text-[11px] text-slate-400 flex items-center justify-between pt-1">
+                            <span>Starts at [{formatHhMmSs(lec.startSec)}]</span>
+                            <span className="text-indigo-400 font-semibold">
+                              {canWatch ? (isPlaying ? '▶ Playing' : '▶ Watch Now') : '🔑 Click to Unlock'}
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {!isCurrentCourseUnlocked && (
+                  <div className="p-4 rounded-xl bg-gradient-to-br from-amber-500/15 to-rose-500/10 border border-amber-500/30 space-y-2.5">
+                    <div className="text-xs font-extrabold text-amber-300">
+                      🔓 Unlock All 5 Classes + AI Notes + PYQ CBT Mocks
+                    </div>
+                    <p className="text-[11px] text-slate-300">
+                      Demo test karne ke liye niche button dabayein aur Code <b>ROHITPRO</b> use karein:
+                    </p>
+                    <button
+                      onClick={() => setShowPaymentModal(true)}
+                      className="w-full py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-extrabold text-xs shadow"
+                    >
+                      Unlock Full Course @ ₹{currentCourse.price}
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ==================================================================== */}
+        {/* 👑 ADMIN PANEL TAB (CREATE NEW COURSES & SET UPI / UNLOCK CODE)      */}
+        {/* ==================================================================== */}
+        {activeTab === 'admin' && (
+          <div className="grid md:grid-cols-2 gap-6">
+            <div className="bg-slate-900 border border-amber-500/30 rounded-2xl p-6 space-y-4">
+              <div className="flex items-center gap-2 text-amber-400 font-extrabold text-base">
+                <ShieldCheck className="w-5 h-5" />
+                <span>1. Option 1 Payment & Unlock Code Settings</span>
+              </div>
+              <p className="text-xs text-slate-400">
+                Yahan aap apni asli UPI ID, WhatsApp Number aur Master Unlock Code set kar sakte hain. Student jab payment karke WhatsApp karega, toh aap use yeh Unlock Code bhej denge!
+              </p>
+
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-xs text-slate-300 mb-1">Your UPI ID (For Receiving Course Fees)</label>
+                  <input
+                    type="text"
+                    value={paymentSettings.upiId}
+                    onChange={(e) => setPaymentSettings({ ...paymentSettings, upiId: e.target.value })}
+                    className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white font-mono"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-slate-300 mb-1">Your WhatsApp Number (With 91 Country Code)</label>
+                  <input
+                    type="text"
+                    value={paymentSettings.whatsappNumber}
+                    onChange={(e) => setPaymentSettings({ ...paymentSettings, whatsappNumber: e.target.value })}
+                    className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white font-mono"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-slate-300 mb-1">Master Course Unlock Code (Secret Coupon)</label>
+                  <input
+                    type="text"
+                    value={paymentSettings.masterUnlockCode}
+                    onChange={(e) => setPaymentSettings({ ...paymentSettings, masterUnlockCode: e.target.value.toUpperCase() })}
+                    className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-amber-300 font-mono font-bold"
+                  />
+                </div>
+                <button
+                  onClick={() => {
+                    localStorage.setItem('admin_payment_settings', JSON.stringify(paymentSettings));
+                    alert('✓ Admin Payment & Unlock Settings Saved!');
+                  }}
+                  className="w-full py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-extrabold text-xs"
+                >
+                  Save Payment & Unlock Code Settings
+                </button>
+              </div>
+            </div>
+
+            <div className="bg-slate-900 border border-indigo-500/30 rounded-2xl p-6 space-y-4">
+              <div className="flex items-center gap-2 text-indigo-400 font-extrabold text-base">
+                <PlusCircle className="w-5 h-5" />
+                <span>2. Publish a New YouTube Course / Batch</span>
+              </div>
+              <p className="text-xs text-slate-400">
+                Apna koi bhi Unlisted ya Public YouTube video link yahan dalein—website uska Course Card, Free Demo aur Paid Lock apne aap bana degi!
+              </p>
+
+              <form onSubmit={handleAddNewCourseFromAdmin} className="space-y-3">
+                <div>
+                  <label className="block text-xs text-slate-300 mb-1">Course / Batch Name *</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. SSC CGL Mains AAO Economics & Governance Batch"
+                    value={newCourseTitle}
+                    onChange={(e) => setNewCourseTitle(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white"
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs text-slate-300 mb-1">YouTube Video URL *</label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="https://youtu.be/..."
+                      value={newCourseYoutubeUrl}
+                      onChange={(e) => setNewCourseYoutubeUrl(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-slate-300 mb-1">Course Price (₹) *</label>
+                    <input
+                      type="number"
+                      required
+                      value={newCoursePrice}
+                      onChange={(e) => setNewCoursePrice(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-emerald-400 font-bold"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-xs text-slate-300 mb-1">Course Description</label>
+                  <textarea
+                    rows={2}
+                    placeholder="Complete syllabus coverage with AI notes and CBT practice tests..."
+                    value={newCourseDesc}
+                    onChange={(e) => setNewCourseDesc(e.target.value)}
+                    className="w-full p-3 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white"
+                  />
+                </div>
+                <button
+                  type="submit"
+                  className="w-full py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-extrabold text-xs"
+                >
+                  + Publish Course to Student Portal
+                </button>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {/* ==================================================================== */}
         {/* 🏠 HOME TAB DASHBOARD                                                */}
         {/* ==================================================================== */}
         {activeTab === 'home' && (
@@ -2711,27 +3428,27 @@ Include these exact 5 sections clearly formatted:
             <div className="bg-gradient-to-r from-indigo-950/80 via-slate-900 to-slate-900 border border-indigo-500/30 rounded-2xl p-6 flex flex-wrap items-center justify-between gap-4">
               <div>
                 <span className="px-2.5 py-1 rounded-full bg-indigo-500/20 text-indigo-300 text-xs font-semibold">
-                  SSC CGL Mains & ASO Command Center
+                  SSC CGL Mains & EdTech Command Center
                 </span>
                 <h2 className="text-2xl font-extrabold text-white mt-2">
                   Welcome back, {user.displayName || 'Rohit'}!
                 </h2>
                 <p className="text-xs text-slate-300 mt-1">
-                  Har question me "Ask AI (Kyun Galat Hua)" aur "Revise Topic with AI" ke sath aapka complete Revision Hub.
+                  Aapका Computer Demo Course live ho chuka hai! Niche "🎓 Open Computer Demo Course" par click karke Video Player aur Unlock System check karein.
                 </p>
               </div>
               <div className="flex flex-wrap gap-2.5">
+                <button
+                  onClick={() => navigateScreen('courses')}
+                  className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-extrabold shadow-lg flex items-center gap-1.5"
+                >
+                  <Video className="w-4 h-4" /> 🎓 Open Computer Demo Course
+                </button>
                 <button
                   onClick={() => navigateScreen('create')}
                   className="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold shadow-lg"
                 >
                   + Upload PDF & Create Mock
-                </button>
-                <button
-                  onClick={() => navigateScreen('vault', { vaultViewMode: 'chapters' })}
-                  className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-lg"
-                >
-                  📚 Open AI Chapter Vault
                 </button>
                 {allStarredQuestions.length > 0 && (
                   <button
@@ -2751,7 +3468,7 @@ Include these exact 5 sections clearly formatted:
               <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4">
                 <div className="text-xs text-slate-400">Total Saved Mocks</div>
                 <div className="text-2xl font-extrabold text-white mt-1">{savedAttempts.length}</div>
-                <div className="text-[11px] text-indigo-400 mt-1">Cloud Synced</div>
+                <div className="text-[11px] text-indigo-400 mt-1">Used: {storageStats.kb} KB / 1 GB</div>
               </div>
               <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4">
                 <div className="text-xs text-slate-400">Questions in Vault</div>
@@ -2764,22 +3481,21 @@ Include these exact 5 sections clearly formatted:
                 <div className="text-[11px] text-slate-400 mt-1">{totalCorrectAll} Correct Answers</div>
               </div>
               <div
-                onClick={() => navigateScreen('vault', { vaultViewMode: 'starred' })}
-                className="bg-slate-900 border border-amber-500/30 rounded-2xl p-4 cursor-pointer hover:border-amber-400 transition"
+                onClick={() => navigateScreen('courses')}
+                className="bg-slate-900 border border-emerald-500/30 rounded-2xl p-4 cursor-pointer hover:border-emerald-400 transition"
               >
-                <div className="text-xs text-amber-300 font-semibold">★ Starred Tough Qs</div>
-                <div className="text-2xl font-extrabold text-amber-400 mt-1">{allStarredQuestions.length}</div>
-                <div className="text-[11px] text-slate-400 mt-1">Click to Revise Starred Bank →</div>
+                <div className="text-xs text-emerald-300 font-semibold">🎓 Active Video Batch</div>
+                <div className="text-base font-extrabold text-white mt-1 truncate">Computer Tier-2 Batch</div>
+                <div className="text-[11px] text-emerald-400 mt-1">Click to Watch & Test →</div>
               </div>
             </div>
 
-            {/* Score Trend Visual Bar Chart on Home */}
             {savedAttempts.length > 0 && (
               <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-3">
                 <div className="flex items-center justify-between">
                   <h3 className="text-sm font-bold text-white flex items-center gap-2">
                     <BarChart3 className="w-4 h-4 text-emerald-400" />
-                    <span>📈 Recent Mock Score % Trend (Target: 80%+ Accuracy)</span>
+                    <span>📈 Recent Mock Score % Trend</span>
                   </h3>
                   <span className="text-xs text-slate-400">Last {Math.min(8, savedAttempts.length)} Mocks</span>
                 </div>
@@ -2811,60 +3527,6 @@ Include these exact 5 sections clearly formatted:
                 </div>
               </div>
             )}
-
-            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-4">
-              <div className="flex items-center justify-between">
-                <h3 className="text-base font-bold text-white">Your Ordered Mock Tests (Quick Access)</h3>
-                <button
-                  onClick={() => navigateScreen('vault', { vaultViewMode: 'tests' })}
-                  className="text-xs text-indigo-400 hover:underline font-semibold"
-                >
-                  View & Reorder All ({savedAttempts.length}) →
-                </button>
-              </div>
-
-              {savedAttempts.length === 0 ? (
-                <p className="text-xs text-slate-400 py-4">
-                  Abhi koi mock save nahi hai. Upar "+ Upload PDF & Create Mock" par click karke shuru karein!
-                </p>
-              ) : (
-                <div className="grid md:grid-cols-2 gap-3">
-                  {savedAttempts.slice(0, 4).map((att, idx) => (
-                    <div
-                      key={idx}
-                      className="p-4 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-between gap-3"
-                    >
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <span className="px-2 py-0.5 rounded bg-indigo-500/20 text-indigo-300 text-[11px] font-bold">
-                            {att.customOrderLabel || `Order #${idx + 1}`}
-                          </span>
-                          <span className="text-xs text-slate-400">{att.qRange}</span>
-                        </div>
-                        <h4 className="text-sm font-bold text-white mt-1">{att.title}</h4>
-                        <p className="text-[11px] text-emerald-400 mt-0.5">
-                          Score: {att.totalScore}/{att.maxScore} • Correct: {att.correct}
-                        </p>
-                      </div>
-                      <div className="flex flex-col gap-1.5 shrink-0">
-                        <button
-                          onClick={() => navigateScreen('review', { selectedAttempt: att, filterMode: 'all' })}
-                          className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold"
-                        >
-                          Open Result
-                        </button>
-                        <button
-                          onClick={() => handleCustomRenameAndOrderMockSet(idx)}
-                          className="px-3 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-amber-300 text-[11px] font-semibold"
-                        >
-                          🔢 Set Order
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
           </div>
         )}
 
@@ -2885,7 +3547,7 @@ Include these exact 5 sections clearly formatted:
                 </div>
                 <button
                   onClick={() => {
-                    setMockTitle('Analogy & Cloze Test CBT Demo (Hindi + English)');
+                    setMockTitle('Computer & Cloze Test CBT Demo (Hindi + English)');
                     startMockWithQuestions(SAMPLE_QUESTIONS);
                   }}
                   className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold"
@@ -2962,7 +3624,6 @@ Include these exact 5 sections clearly formatted:
                 />
               </div>
 
-              {/* Pre-Test Option Elimination Selector right inside Settings as well */}
               <div className="p-3 rounded-xl bg-slate-950 border border-amber-500/30 space-y-1.5">
                 <label className="block text-xs font-bold text-amber-300">
                   ✂️ Option 2: 50-50 Option Elimination (Before Test):
@@ -3014,27 +3675,6 @@ Include these exact 5 sections clearly formatted:
                     </button>
                   ))}
                 </div>
-              </div>
-
-              <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 space-y-2.5">
-                <div className="text-xs font-semibold text-amber-400 flex items-center justify-between">
-                  <span>Custom Chapter Name (Optional)</span>
-                  <span className="text-[10px] text-slate-400 font-normal">Blank = AI Auto-Divides</span>
-                </div>
-                <input
-                  type="text"
-                  value={customSubjectInput}
-                  onChange={(e) => setCustomSubjectInput(e.target.value)}
-                  placeholder="Subject (Optional, e.g. English / Reasoning)"
-                  className="w-full px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-800 text-xs text-white"
-                />
-                <input
-                  type="text"
-                  value={customChapterInput}
-                  onChange={(e) => setCustomChapterInput(e.target.value)}
-                  placeholder="Chapter Name (Optional, e.g. Analogy - 1)"
-                  className="w-full px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-800 text-xs text-white"
-                />
               </div>
 
               <div className="grid grid-cols-2 gap-3">
@@ -3127,7 +3767,7 @@ Include these exact 5 sections clearly formatted:
                   <span>AI Automatic Chapter-Wise, Topic Revision & Order Vault</span>
                 </h2>
                 <p className="text-xs text-slate-400">
-                  Har Chapter ke andar "📖 Revise Chapter with AI" daba kar uske saare formulas aur concepts padhein taaki dubara galti na ho.
+                  Cloud Storage Used: <b>{storageStats.kb} KB</b> ({storageStats.mb} MB out of 1,024 MB Free Tier)
                 </p>
               </div>
               <div className="flex flex-wrap gap-2">
@@ -3168,314 +3808,137 @@ Include these exact 5 sections clearly formatted:
               </div>
             </div>
 
-            {allSubjectsList.length > 1 && vaultViewMode !== 'starred' && (
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="text-xs text-slate-400 flex items-center gap-1 mr-1">
-                  <Filter className="w-3.5 h-3.5 text-indigo-400" /> Filter Subject:
-                </span>
-                {allSubjectsList.map((sub) => (
-                  <button
-                    key={sub}
-                    onClick={() => navigateScreen('vault', { selectedSubjectFilter: sub })}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition ${
-                      selectedSubjectFilter === sub
-                        ? 'bg-indigo-600 text-white'
-                        : 'bg-slate-900 border border-slate-800 text-slate-300 hover:border-slate-700'
-                    }`}
-                  >
-                    {sub}
-                  </button>
-                ))}
-              </div>
-            )}
-
             {savedAttempts.length === 0 ? (
               <div className="bg-slate-900 border border-slate-800 rounded-2xl p-10 text-center text-slate-400">
-                Abhi tak koi mock test save nahi hua hai. "+ Create Mock" me jakar apna pehla test dein!
+                Abhi tak koi mock test save nahi hua hai. "🎓 Courses (Demo)" ya "+ Create Mock" me jakar apna pehla test dein!
               </div>
             ) : vaultViewMode === 'starred' ? (
               <div className="space-y-4">
-                <div className="bg-slate-900 border border-amber-500/30 rounded-2xl p-4 flex flex-wrap items-center justify-between gap-3">
-                  <div>
-                    <h3 className="text-base font-bold text-amber-300">★ Your Starred / Bookmarked Tough Questions ({allStarredQuestions.length})</h3>
-                    <p className="text-xs text-slate-400">Sabhi mocks me se aapke chune hue sabse important questions ek jagah.</p>
-                  </div>
-                  {allStarredQuestions.length > 0 && (
-                    <button
-                      onClick={() => {
-                        setMockTitle(`★ Starred Tough Questions Mock (${allStarredQuestions.length} Qs)`);
-                        startMockWithQuestions(allStarredQuestions);
-                      }}
-                      className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-extrabold"
-                    >
-                      ▶ Start Mock of All Starred Questions
-                    </button>
-                  )}
-                </div>
-
-                {allStarredQuestions.length === 0 ? (
-                  <div className="bg-slate-900 border border-slate-800 rounded-2xl p-8 text-center text-slate-400 text-xs">
-                    Abhi koi question Star nahi kiya gaya hai. Test ya Result ke waqt kisi bhi question par "☆ Star" button dabayein!
-                  </div>
-                ) : (
-                  allStarredQuestions.map((sq, sIdx) => (
-                    <div key={sIdx} className="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-3">
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-                        <div className="flex items-center gap-2">
-                          <span className="px-2.5 py-0.5 rounded bg-amber-400 text-slate-950 text-xs font-extrabold">
-                            ★ Starred #{sIdx + 1}
-                          </span>
-                          <span className="text-xs text-indigo-400 font-semibold">{sq.subject} • {sq.chapter} ({sq.topic})</span>
-                        </div>
-                        <button
-                          onClick={() => handleReviseChapterTopicWithAI(sq.subject || 'General', sq.chapter || 'General', sq.topic || 'Concept', sq)}
-                          className="px-3 py-1 rounded-lg bg-indigo-600/20 hover:bg-indigo-600 text-indigo-300 hover:text-white text-xs font-bold transition"
-                        >
-                          📖 Revise This Topic with AI
-                        </button>
-                      </div>
-                      <p className="text-sm text-white whitespace-pre-line">{getLocalizedQuestionText(sq, testLang)}</p>
-                      <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 text-xs text-emerald-300">
-                        <b>Correct Answer:</b> {String.fromCharCode(65 + (sq.correctIndex || 0))}. {getLocalizedOptionText(sq, sq.correctIndex || 0, testLang)}
-                      </div>
-                      <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 text-xs text-slate-300 whitespace-pre-line">
-                        <strong className="text-indigo-400">Solution: </strong>{getLocalizedExplanationText(sq, testLang)}
-                      </div>
+                {allStarredQuestions.map((sq, sIdx) => (
+                  <div key={sIdx} className="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span className="px-2.5 py-0.5 rounded bg-amber-400 text-slate-950 text-xs font-extrabold">
+                        ★ Starred #{sIdx + 1} • {sq.subject} ({sq.chapter})
+                      </span>
+                      <button
+                        onClick={() => handleReviseChapterTopicWithAI(sq.subject || 'General', sq.chapter || 'General', sq.topic || 'Concept', sq)}
+                        className="px-3 py-1 rounded-lg bg-indigo-600 text-white text-xs font-bold"
+                      >
+                        📖 Revise Topic with AI
+                      </button>
                     </div>
-                  ))
-                )}
+                    <p className="text-sm text-white whitespace-pre-line">{getLocalizedQuestionText(sq, testLang)}</p>
+                    <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 text-xs text-emerald-300">
+                      <b>Correct Answer:</b> {String.fromCharCode(65 + (sq.correctIndex || 0))}. {getLocalizedOptionText(sq, sq.correctIndex || 0, testLang)}
+                    </div>
+                  </div>
+                ))}
               </div>
             ) : vaultViewMode === 'chapters' ? (
               <div className="grid md:grid-cols-2 gap-4">
-                {chapterWiseStats
-                  .filter(item => selectedSubjectFilter === 'All' || item.subject === selectedSubjectFilter)
-                  .map((chapItem, cIdx) => {
-                    const accuracy = chapItem.totalQs > 0
-                      ? Math.round((chapItem.correct / chapItem.totalQs) * 100)
-                      : 0;
-                    const topicsArr = Object.values(chapItem.topicsMap);
+                {chapterWiseStats.map((chapItem, cIdx) => {
+                  const accuracy = chapItem.totalQs > 0 ? Math.round((chapItem.correct / chapItem.totalQs) * 100) : 0;
+                  const topicsArr = Object.values(chapItem.topicsMap);
 
-                    return (
-                      <div key={cIdx} className="bg-slate-900 border border-slate-800 rounded-2xl p-5 flex flex-col justify-between gap-4">
-                        <div>
-                          <div className="flex items-center justify-between gap-2">
-                            <span className="px-2.5 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 text-[11px] font-semibold">
-                              {chapItem.subject}
-                            </span>
-                            <div className="flex items-center gap-2">
-                              <button
-                                onClick={() => handleRenameChapterGroup(chapItem.subject, chapItem.chapter)}
-                                className="px-2 py-0.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-amber-300 text-[11px] flex items-center gap-1"
-                              >
-                                <Edit3 className="w-3 h-3" /> Rename
-                              </button>
-                              <span className={`text-xs font-bold px-2.5 py-0.5 rounded-full ${
-                                accuracy >= 75 ? 'bg-emerald-500/20 text-emerald-300' : accuracy >= 50 ? 'bg-amber-500/20 text-amber-300' : 'bg-rose-500/20 text-rose-300'
-                              }`}>
-                                Accuracy: {accuracy}%
-                              </span>
-                            </div>
-                          </div>
-
-                          <div className="flex items-center justify-between gap-2 mt-2">
-                            <h3 className="text-base font-bold text-white">
-                              Chapter: {chapItem.chapter}
-                            </h3>
-                            <button
-                              onClick={() => handleReviseChapterTopicWithAI(chapItem.subject, chapItem.chapter, 'Complete Chapter Concept & Formulas')}
-                              className="px-2.5 py-1 rounded-lg bg-emerald-600/20 hover:bg-emerald-600 text-emerald-300 hover:text-white text-[11px] font-bold transition"
-                            >
-                              📖 Revise Chapter (AI Notes)
-                            </button>
-                          </div>
-
-                          <div className="grid grid-cols-4 gap-2 mt-3 text-center">
-                            <div className="p-2 rounded-xl bg-slate-950 border border-slate-800">
-                              <div className="text-[11px] text-slate-400">Total Qs</div>
-                              <div className="text-sm font-bold text-white">{chapItem.totalQs}</div>
-                            </div>
-                            <div className="p-2 rounded-xl bg-emerald-500/10 border border-emerald-500/20">
-                              <div className="text-[11px] text-emerald-400">Correct</div>
-                              <div className="text-sm font-bold text-emerald-300">{chapItem.correct}</div>
-                            </div>
-                            <div className="p-2 rounded-xl bg-rose-500/10 border border-rose-500/20">
-                              <div className="text-[11px] text-rose-400">Wrong</div>
-                              <div className="text-sm font-bold text-rose-300">{chapItem.wrong}</div>
-                            </div>
-                            <div className="p-2 rounded-xl bg-slate-950 border border-slate-800">
-                              <div className="text-[11px] text-slate-400">Skipped</div>
-                              <div className="text-sm font-bold text-slate-300">{chapItem.skipped}</div>
-                            </div>
-                          </div>
-
-                          <div className="mt-4">
-                            <div className="text-xs font-semibold text-slate-400 mb-2">
-                              📌 AI Topic-Wise Breakdown ({topicsArr.length} Topics):
-                            </div>
-                            <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1">
-                              {topicsArr.map((tObj, tIdx) => (
-                                <div
-                                  key={tIdx}
-                                  className="flex items-center justify-between px-3 py-1.5 rounded-xl bg-slate-950 border border-slate-800 text-xs"
-                                >
-                                  <span className="text-slate-200 font-medium truncate pr-2">
-                                    • {tObj.topic}
-                                  </span>
-                                  <div className="flex items-center gap-1.5 shrink-0">
-                                    <span className="text-emerald-400">{tObj.correct}✓</span>
-                                    <span className="text-rose-400">{tObj.wrong}✗</span>
-                                    <button
-                                      onClick={() => handleReviseChapterTopicWithAI(chapItem.subject, chapItem.chapter, tObj.topic, tObj.questions?.[0])}
-                                      className="px-2 py-0.5 rounded bg-emerald-600/30 hover:bg-emerald-600 text-emerald-200 text-[10px] font-semibold"
-                                      title="Revise this Topic so you never make a mistake again"
-                                    >
-                                      📖 Revise
-                                    </button>
-                                    <button
-                                      onClick={() => {
-                                        setMockTitle(`${chapItem.chapter} - ${tObj.topic}`);
-                                        startMockWithQuestions(tObj.questions);
-                                      }}
-                                      className="px-2 py-0.5 rounded bg-indigo-600/30 hover:bg-indigo-600 text-indigo-200 text-[10px] font-semibold"
-                                    >
-                                      Practice
-                                    </button>
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        </div>
-
-                        <div className="flex gap-2 pt-2 border-t border-slate-800">
-                          <button
-                            onClick={() => {
-                              setMockTitle(`${chapItem.subject}: ${chapItem.chapter} (Full Chapter Practice)`);
-                              startMockWithQuestions(chapItem.allQuestions);
-                            }}
-                            className="flex-1 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold"
-                          >
-                            Practice Full Chapter ({chapItem.totalQs} Qs)
-                          </button>
-                          {chapItem.mistakeQuestions.length > 0 && (
-                            <button
-                              onClick={() => {
-                                setMockTitle(`${chapItem.chapter} (Mistakes Retry)`);
-                                startMockWithQuestions(chapItem.mistakeQuestions);
-                              }}
-                              className="px-3 py-2 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 text-xs font-semibold"
-                            >
-                              Retry Mistakes ({chapItem.mistakeQuestions.length})
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
-              </div>
-            ) : (
-              <div className="grid md:grid-cols-2 gap-4">
-                {savedAttempts
-                  .filter(att => selectedSubjectFilter === 'All' || (att.subjectsList || [att.primarySubject]).includes(selectedSubjectFilter))
-                  .map((att, idx) => (
-                    <div key={idx} className="bg-slate-900 border border-slate-800 rounded-2xl p-5 flex flex-col justify-between gap-4">
+                  return (
+                    <div key={cIdx} className="bg-slate-900 border border-slate-800 rounded-2xl p-5 flex flex-col justify-between gap-4">
                       <div>
-                        <div className="flex flex-wrap items-center justify-between gap-2">
-                          <div className="flex items-center gap-2">
-                            <span className="px-2.5 py-1 rounded-lg bg-indigo-600 text-white text-xs font-extrabold">
-                              {att.customOrderLabel || `Order #${idx + 1}`}
-                            </span>
-                            <span className="text-xs text-indigo-400 font-semibold">
-                              {att.qRange}
-                            </span>
-                          </div>
-
-                          <div className="flex items-center gap-1.5">
-                            <button
-                              onClick={() => handleCustomRenameAndOrderMockSet(idx)}
-                              className="px-2.5 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500 text-amber-300 hover:text-slate-950 text-xs font-bold flex items-center gap-1 transition"
-                            >
-                              <Hash className="w-3 h-3" /> Set Order / Rename
-                            </button>
-                            <button
-                              disabled={idx === 0}
-                              onClick={() => handleMoveAttemptInVault(idx, idx - 1)}
-                              className="p-1 rounded bg-slate-800 hover:bg-slate-700 disabled:opacity-30 text-slate-300"
-                            >
-                              <ArrowUp className="w-3.5 h-3.5" />
-                            </button>
-                            <button
-                              disabled={idx === savedAttempts.length - 1}
-                              onClick={() => handleMoveAttemptInVault(idx, idx + 1)}
-                              className="p-1 rounded bg-slate-800 hover:bg-slate-700 disabled:opacity-30 text-slate-300"
-                            >
-                              <ArrowDown className="w-3.5 h-3.5" />
-                            </button>
-                            <button
-                              onClick={() => handleDeleteAttempt(att)}
-                              className="p-1 rounded bg-slate-800 hover:bg-rose-500/20 text-slate-400 hover:text-rose-400"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="px-2.5 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 text-[11px] font-semibold">
+                            {chapItem.subject}
+                          </span>
+                          <span className="text-xs font-bold text-emerald-300">Accuracy: {accuracy}%</span>
+                        </div>
+                        <div className="flex items-center justify-between gap-2 mt-2">
+                          <h3 className="text-base font-bold text-white">Chapter: {chapItem.chapter}</h3>
+                          <button
+                            onClick={() => handleReviseChapterTopicWithAI(chapItem.subject, chapItem.chapter, 'Complete Chapter Concept & Formulas')}
+                            className="px-2.5 py-1 rounded-lg bg-emerald-600/20 hover:bg-emerald-600 text-emerald-300 hover:text-white text-[11px] font-bold transition"
+                          >
+                            📖 Revise Chapter
+                          </button>
                         </div>
 
-                        <h3 className="text-base font-bold text-white mt-2">{att.title}</h3>
-                        <p className="text-[11px] text-slate-500">{att.dateStr}</p>
-
-                        <div className="grid grid-cols-4 gap-2 mt-4 text-center">
-                          <div className="p-2 rounded-xl bg-slate-950 border border-slate-800">
-                            <div className="text-xs text-slate-400">Score</div>
-                            <div className="text-sm font-bold text-white">{att.totalScore}/{att.maxScore}</div>
-                          </div>
-                          <div className="p-2 rounded-xl bg-emerald-500/10 border border-emerald-500/20">
-                            <div className="text-xs text-emerald-400">Correct</div>
-                            <div className="text-sm font-bold text-emerald-300">{att.correct}</div>
-                          </div>
-                          <div className="p-2 rounded-xl bg-rose-500/10 border border-rose-500/20">
-                            <div className="text-xs text-rose-400">Wrong</div>
-                            <div className="text-sm font-bold text-rose-300">{att.wrong}</div>
-                          </div>
-                          <div className="p-2 rounded-xl bg-slate-950 border border-slate-800">
-                            <div className="text-xs text-slate-400">Skipped</div>
-                            <div className="text-sm font-bold text-slate-300">{att.unattempted}</div>
-                          </div>
+                        <div className="mt-3 space-y-1.5 max-h-40 overflow-y-auto pr-1">
+                          {topicsArr.map((tObj, tIdx) => (
+                            <div key={tIdx} className="flex items-center justify-between px-3 py-1.5 rounded-xl bg-slate-950 border border-slate-800 text-xs">
+                              <span className="text-slate-200 truncate pr-2">• {tObj.topic}</span>
+                              <div className="flex items-center gap-1.5 shrink-0">
+                                <button
+                                  onClick={() => handleReviseChapterTopicWithAI(chapItem.subject, chapItem.chapter, tObj.topic, tObj.questions?.[0])}
+                                  className="px-2 py-0.5 rounded bg-emerald-600/30 hover:bg-emerald-600 text-emerald-200 text-[10px] font-semibold"
+                                >
+                                  📖 Revise
+                                </button>
+                                <button
+                                  onClick={() => {
+                                    setMockTitle(`${chapItem.chapter} - ${tObj.topic}`);
+                                    startMockWithQuestions(tObj.questions);
+                                  }}
+                                  className="px-2 py-0.5 rounded bg-indigo-600/30 hover:bg-indigo-600 text-indigo-200 text-[10px] font-semibold"
+                                >
+                                  Practice
+                                </button>
+                              </div>
+                            </div>
+                          ))}
                         </div>
                       </div>
 
-                      <div className="flex flex-wrap gap-2">
+                      <div className="flex gap-2 pt-2 border-t border-slate-800">
                         <button
-                          onClick={() => navigateScreen('review', { selectedAttempt: att, filterMode: 'all' })}
+                          onClick={() => {
+                            setMockTitle(`${chapItem.subject}: ${chapItem.chapter}`);
+                            startMockWithQuestions(chapItem.allQuestions);
+                          }}
                           className="flex-1 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold"
                         >
-                          Detailed Result & Ask AI
-                        </button>
-                        <button
-                          onClick={() => {
-                            setMockTitle(att.title);
-                            startMockWithQuestions(att.questions);
-                          }}
-                          className="px-3 py-2 rounded-xl bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 text-xs font-semibold"
-                        >
-                          Re-Attempt
-                        </button>
-                        <button
-                          onClick={() => {
-                            const wrongQs = att.questions.filter((q, i) => att.userAnswers?.[i] !== q.correctIndex);
-                            if (wrongQs.length === 0) {
-                              alert("Sabhi answers sahi the!");
-                              return;
-                            }
-                            setMockTitle(`${att.title} (Mistakes Retry)`);
-                            startMockWithQuestions(wrongQs);
-                          }}
-                          className="px-3 py-2 rounded-xl bg-amber-500/20 text-amber-300 text-xs font-semibold"
-                        >
-                          Retry Mistakes
+                          Practice Chapter ({chapItem.totalQs} Qs)
                         </button>
                       </div>
                     </div>
-                  ))}
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="grid md:grid-cols-2 gap-4">
+                {savedAttempts.map((att, idx) => (
+                  <div key={idx} className="bg-slate-900 border border-slate-800 rounded-2xl p-5 flex flex-col justify-between gap-4">
+                    <div>
+                      <div className="flex items-center justify-between">
+                        <span className="px-2.5 py-1 rounded-lg bg-indigo-600 text-white text-xs font-extrabold">
+                          {att.customOrderLabel || `Order #${idx + 1}`}
+                        </span>
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            onClick={() => handleCustomRenameAndOrderMockSet(idx)}
+                            className="px-2.5 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500 text-amber-300 hover:text-slate-950 text-xs font-bold"
+                          >
+                            🔢 Set Order
+                          </button>
+                          <button
+                            onClick={() => handleDeleteAttempt(att)}
+                            className="p-1 rounded bg-slate-800 text-slate-400 hover:text-rose-400"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                      <h3 className="text-base font-bold text-white mt-2">{att.title}</h3>
+                      <p className="text-xs text-emerald-400 mt-1">
+                        Score: {att.totalScore}/{att.maxScore} • Correct: {att.correct} • Wrong: {att.wrong}
+                      </p>
+                    </div>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => navigateScreen('review', { selectedAttempt: att, filterMode: 'all' })}
+                        className="flex-1 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold"
+                      >
+                        Detailed Result & Ask AI
+                      </button>
+                    </div>
+                  </div>
+                ))}
               </div>
             )}
           </div>
@@ -3488,64 +3951,18 @@ Include these exact 5 sections clearly formatted:
           const totalQs = selectedAttempt.questions?.length || 1;
           const attemptedQs = (selectedAttempt.correct || 0) + (selectedAttempt.wrong || 0);
           const accuracyPct = attemptedQs > 0 ? Math.round((selectedAttempt.correct / attemptedQs) * 100) : 0;
-          const scorePct = selectedAttempt.maxScore > 0
-            ? Math.max(0, Math.round((selectedAttempt.totalScore / selectedAttempt.maxScore) * 100))
-            : 0;
-          const posMarksEarned = Number(((selectedAttempt.correct || 0) * (selectedAttempt.positiveMarks || 3)).toFixed(2));
-          const negMarksLost = Number(((selectedAttempt.wrong || 0) * (selectedAttempt.negativeMarks || 1)).toFixed(2));
-          const totalSpentSec = selectedAttempt.totalTimeSpentSec || 0;
-          const avgTimePerQ = totalQs > 0 ? Math.round(totalSpentSec / totalQs) : 0;
 
           return (
             <div className="space-y-6">
-              <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-5 shadow-xl">
+              <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-4 shadow-xl">
                 <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-800 pb-4">
                   <div>
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={handleGoBack}
-                        className="px-3 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-amber-300 text-xs font-bold flex items-center gap-1 print:hidden"
-                      >
-                        <ArrowLeft className="w-3.5 h-3.5" /> Back
-                      </button>
-                      <span className="px-2.5 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 text-xs font-semibold">
-                        Official Detailed Result & AI Coach Report
-                      </span>
-                    </div>
-                    <h2 className="text-xl font-extrabold text-white mt-2">
-                      {selectedAttempt.title}
-                    </h2>
-                    <p className="text-xs text-slate-400 mt-0.5">
-                      Attempted on: {selectedAttempt.dateStr} • Total Questions: {totalQs}
+                    <h2 className="text-xl font-extrabold text-white">{selectedAttempt.title}</h2>
+                    <p className="text-xs text-slate-400">
+                      Score: <b className="text-emerald-400">{selectedAttempt.totalScore}/{selectedAttempt.maxScore}</b> • Accuracy: <b>{accuracyPct}%</b> • Correct: {selectedAttempt.correct} • Wrong: {selectedAttempt.wrong}
                     </p>
                   </div>
-
-                  <div className="flex flex-wrap items-center gap-2 print:hidden">
-                    <div className="flex items-center gap-1 bg-slate-950 border border-slate-800 rounded-xl p-1">
-                      {[
-                        { id: 'hi', label: 'हिन्दी' },
-                        { id: 'en', label: 'English' },
-                        { id: 'bi', label: 'Both' }
-                      ].map((l) => (
-                        <button
-                          key={l.id}
-                          onClick={() => setTestLang(l.id)}
-                          className={`px-2.5 py-1 rounded-lg text-xs font-bold transition ${
-                            testLang === l.id ? 'bg-indigo-600 text-white' : 'text-slate-400'
-                          }`}
-                        >
-                          {l.label}
-                        </button>
-                      ))}
-                    </div>
-
-                    <button
-                      onClick={() => window.print()}
-                      className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-amber-300 text-xs font-bold"
-                    >
-                      🖨️ Print Result / Notes
-                    </button>
-
+                  <div className="flex gap-2">
                     <button
                       onClick={() => {
                         setMockTitle(selectedAttempt.title);
@@ -3553,187 +3970,20 @@ Include these exact 5 sections clearly formatted:
                       }}
                       className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold"
                     >
-                      ▶ Re-Attempt This Mock
+                      ▶ Re-Attempt Mock
                     </button>
                   </div>
                 </div>
-
-                {/* 4 Pillar Analytics Cards */}
-                <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                  <div className="p-4 rounded-2xl bg-slate-950 border border-indigo-500/30 flex flex-col justify-between">
-                    <div className="flex items-center justify-between text-xs text-slate-400">
-                      <span>Final Net Score</span>
-                      <Award className="w-4 h-4 text-indigo-400" />
-                    </div>
-                    <div className="my-2">
-                      <span className="text-3xl font-extrabold text-white">{selectedAttempt.totalScore}</span>
-                      <span className="text-sm text-slate-400"> / {selectedAttempt.maxScore}</span>
-                    </div>
-                    <div className="space-y-1">
-                      <div className="flex justify-between text-[11px]">
-                        <span className="text-slate-400">Score Percentage</span>
-                        <span className="font-bold text-indigo-300">{scorePct}%</span>
-                      </div>
-                      <div className="w-full h-2 rounded-full bg-slate-800 overflow-hidden">
-                        <div className="h-full bg-indigo-500 rounded-full" style={{ width: `${Math.min(100, scorePct)}%` }} />
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="p-4 rounded-2xl bg-slate-950 border border-emerald-500/30 flex flex-col justify-between">
-                    <div className="flex items-center justify-between text-xs text-slate-400">
-                      <span>Accuracy & Attempts</span>
-                      <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                    </div>
-                    <div className="my-2">
-                      <span className="text-3xl font-extrabold text-emerald-400">{accuracyPct}%</span>
-                      <span className="text-xs text-slate-400 ml-2">({attemptedQs}/{totalQs} Attempted)</span>
-                    </div>
-                    <div className="space-y-1">
-                      <div className="flex justify-between text-[11px]">
-                        <span className="text-emerald-400">Correct: {selectedAttempt.correct}</span>
-                        <span className="text-rose-400">Wrong: {selectedAttempt.wrong}</span>
-                        <span className="text-slate-400">Skipped: {selectedAttempt.unattempted}</span>
-                      </div>
-                      <div className="w-full h-2 rounded-full bg-slate-800 overflow-hidden flex">
-                        <div
-                          className="h-full bg-emerald-500"
-                          style={{ width: `${(selectedAttempt.correct / totalQs) * 100}%` }}
-                        />
-                        <div
-                          className="h-full bg-rose-500"
-                          style={{ width: `${(selectedAttempt.wrong / totalQs) * 100}%` }}
-                        />
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="p-4 rounded-2xl bg-slate-950 border border-amber-500/30 flex flex-col justify-between">
-                    <div className="flex items-center justify-between text-xs text-slate-400">
-                      <span>Marks Breakdown</span>
-                      <BarChart3 className="w-4 h-4 text-amber-400" />
-                    </div>
-                    <div className="space-y-1.5 my-2 text-xs">
-                      <div className="flex justify-between">
-                        <span className="text-emerald-400">Positive ({selectedAttempt.correct} × +{selectedAttempt.positiveMarks}):</span>
-                        <span className="font-bold text-emerald-300">+{posMarksEarned}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-rose-400">Negative ({selectedAttempt.wrong} × -{selectedAttempt.negativeMarks}):</span>
-                        <span className="font-bold text-rose-300">-{negMarksLost}</span>
-                      </div>
-                    </div>
-                    <div className="pt-1.5 border-t border-slate-800 flex justify-between text-xs font-bold">
-                      <span className="text-slate-300">Net Total Marks:</span>
-                      <span className="text-white">{selectedAttempt.totalScore}</span>
-                    </div>
-                  </div>
-
-                  <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 flex flex-col justify-between">
-                    <div className="flex items-center justify-between text-xs text-slate-400">
-                      <span>Time & Speed Analysis</span>
-                      <Clock className="w-4 h-4 text-amber-400" />
-                    </div>
-                    <div className="my-2">
-                      <span className="text-2xl font-extrabold text-amber-300">{formatShortTime(totalSpentSec)}</span>
-                      <span className="text-xs text-slate-400 ml-1.5">Total Time</span>
-                    </div>
-                    <div className="text-[11px] text-slate-400 flex justify-between pt-1.5 border-t border-slate-800">
-                      <span>Avg Time / Question:</span>
-                      <span className="text-white font-bold">{avgTimePerQ} sec</span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Topic Breakdown Table with Direct "Revise Topic with AI" Button */}
-                {selectedAttemptTopicBreakdown.length > 0 && (
-                  <div className="pt-2">
-                    <h3 className="text-xs font-bold text-indigo-300 uppercase tracking-wider mb-2.5">
-                      📊 Topic-Wise Performance & Instant AI Topic Revision
-                    </h3>
-                    <div className="overflow-x-auto rounded-xl border border-slate-800">
-                      <table className="w-full text-left text-xs">
-                        <thead className="bg-slate-950 text-slate-400 border-b border-slate-800">
-                          <tr>
-                            <th className="py-2.5 px-3">Chapter & Topic</th>
-                            <th className="py-2.5 px-3 text-center">Total Qs</th>
-                            <th className="py-2.5 px-3 text-center text-emerald-400">Correct</th>
-                            <th className="py-2.5 px-3 text-center text-rose-400">Wrong</th>
-                            <th className="py-2.5 px-3 text-center">Accuracy</th>
-                            <th className="py-2.5 px-3 text-right">Master This Topic</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-800/70 bg-slate-900/50">
-                          {selectedAttemptTopicBreakdown.map((row, rIdx) => {
-                            const rowAtt = row.correct + row.wrong;
-                            const rowAcc = rowAtt > 0 ? Math.round((row.correct / rowAtt) * 100) : 0;
-                            return (
-                              <tr key={rIdx}>
-                                <td className="py-2 px-3 font-medium text-white">
-                                  <span className="text-emerald-300">{row.chapter}</span> — {row.topic}
-                                </td>
-                                <td className="py-2 px-3 text-center">{row.total}</td>
-                                <td className="py-2 px-3 text-center text-emerald-300 font-bold">{row.correct}</td>
-                                <td className="py-2 px-3 text-center text-rose-300 font-bold">{row.wrong}</td>
-                                <td className="py-2 px-3 text-center font-bold">{rowAcc}%</td>
-                                <td className="py-2 px-3 text-right">
-                                  <button
-                                    onClick={() => handleReviseChapterTopicWithAI(row.subject, row.chapter, row.topic, row.sampleQ)}
-                                    className="px-2.5 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-[11px] font-bold"
-                                  >
-                                    📖 Revise Topic (AI Notes)
-                                  </button>
-                                </td>
-                              </tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                )}
               </div>
 
-              {/* Filter Bar */}
-              <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 flex flex-wrap items-center justify-between gap-3 print:hidden">
-                <div>
-                  <h3 className="text-sm font-bold text-white">
-                    Questions Review, 🤖 Ask AI (Why Wrong), 📖 Revise Topic & 🔢 Order Manager
-                  </h3>
-                  <p className="text-xs text-slate-400">
-                    Har question me "🤖 Ask AI: Kyun Galat Hua?" aur "📖 Revise Topic" button diya gaya hai.
-                  </p>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  {['all', 'wrong', 'unattempted', 'correct', 'starred'].map((f) => (
-                    <button
-                      key={f}
-                      onClick={() => setFilterMode(f)}
-                      className={`px-3 py-1.5 rounded-xl text-xs font-semibold capitalize ${
-                        filterMode === f ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-slate-300'
-                      }`}
-                    >
-                      {f === 'starred' ? '★ Starred' : f}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Question-by-Question Revision Cards */}
               <div className="space-y-4">
                 {selectedAttempt.questions.map((q, idx) => {
                   const uAns = selectedAttempt.userAnswers?.[idx];
                   const isCorrect = uAns === q.correctIndex;
                   const isSkipped = uAns === undefined;
                   const isWrong = !isSkipped && !isCorrect;
-                  const qSpent = selectedAttempt.questionTimeSpent?.[idx] || 0;
                   const savedAiCoachNote = selectedAttempt.aiAnalysis?.[idx] || '';
                   const isAiLoading = !!aiLoadingMap[idx];
-
-                  if (filterMode === 'wrong' && !isWrong) return null;
-                  if (filterMode === 'unattempted' && !isSkipped) return null;
-                  if (filterMode === 'correct' && !isCorrect) return null;
-                  if (filterMode === 'starred' && !q.starred) return null;
 
                   const revPassage = getLocalizedPassageText(q, testLang);
                   const revQuestion = getLocalizedQuestionText(q, testLang);
@@ -3741,79 +3991,37 @@ Include these exact 5 sections clearly formatted:
 
                   return (
                     <div key={idx} className="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-3">
-                      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800/80 pb-3">
+                      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 pb-3">
                         <div className="flex flex-wrap items-center gap-2">
                           <span className="px-2.5 py-1 rounded-lg bg-indigo-600 text-white text-xs font-extrabold">
                             Order #{idx + 1} ({q.customLabel || `Q.${idx + 1}`})
                           </span>
                           <button
                             onClick={() => toggleStarInReview(idx)}
-                            className={`px-2.5 py-1 rounded-lg text-xs font-bold transition ${
-                              q.starred
-                                ? 'bg-amber-400 text-slate-950'
-                                : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+                            className={`px-2.5 py-1 rounded-lg text-xs font-bold ${
+                              q.starred ? 'bg-amber-400 text-slate-950' : 'bg-slate-800 text-slate-300'
                             }`}
                           >
                             {q.starred ? '★ Starred' : '☆ Star'}
                           </button>
-                          {q.subject && (
-                            <span className="px-2 py-0.5 rounded-md bg-indigo-500/15 text-indigo-300 text-[11px]">
-                              {q.subject}
-                            </span>
-                          )}
-                          {q.chapter && (
-                            <span className="px-2 py-0.5 rounded-md bg-emerald-500/15 text-emerald-300 text-[11px]">
-                              Chapter: {q.chapter}
-                            </span>
-                          )}
-                          {q.topic && (
-                            <span className="px-2 py-0.5 rounded-md bg-amber-500/15 text-amber-300 text-[11px]">
-                              Topic: {q.topic}
-                            </span>
-                          )}
-                          <button
-                            onClick={() => handleEditSingleQuestionMeta(idx)}
-                            className="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-amber-300 text-[10px] flex items-center gap-1 print:hidden"
-                          >
-                            <Edit3 className="w-2.5 h-2.5" /> Edit Topic
-                          </button>
+                          <span className="px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-300 text-[11px]">
+                            {q.chapter} • {q.topic}
+                          </span>
                         </div>
 
-                        <div className="flex flex-wrap items-center gap-1.5 print:hidden">
-                          <span className="text-[11px] text-slate-400 mr-1 font-mono">
-                            ⏱ {formatShortTime(qSpent)}
-                          </span>
-
+                        <div className="flex items-center gap-1.5">
                           <button
                             onClick={() => handleCustomOrderAndRenameQuestion(idx)}
-                            className="px-2.5 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500 text-amber-300 hover:text-slate-950 text-xs font-bold flex items-center gap-1 transition"
+                            className="px-2.5 py-1 rounded-lg bg-amber-500/20 text-amber-300 text-xs font-bold"
                           >
-                            <Hash className="w-3.5 h-3.5" /> Set Order / Rename Q
+                            🔢 Set Order
                           </button>
-
-                          <button
-                            disabled={idx === 0}
-                            onClick={() => handleMoveQuestionInSavedMock(idx, idx - 1)}
-                            className="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 disabled:opacity-30 text-slate-200 text-xs flex items-center gap-0.5"
-                          >
-                            <ArrowUp className="w-3.5 h-3.5" /> Up
-                          </button>
-
-                          <button
-                            disabled={idx === selectedAttempt.questions.length - 1}
-                            onClick={() => handleMoveQuestionInSavedMock(idx, idx + 1)}
-                            className="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 disabled:opacity-30 text-slate-200 text-xs flex items-center gap-0.5"
-                          >
-                            <ArrowDown className="w-3.5 h-3.5" /> Down
-                          </button>
-
                           <button
                             onClick={() => handleRemoveQuestionFromSavedMock(idx)}
-                            className="px-2.5 py-1 rounded-lg bg-rose-500/15 hover:bg-rose-600 text-rose-300 hover:text-white text-xs font-semibold flex items-center gap-1"
+                            className="px-2.5 py-1 rounded-lg bg-rose-500/15 text-rose-300 text-xs font-semibold"
                           >
-                            <Trash2 className="w-3.5 h-3.5" /> Remove Q
+                            🗑️ Remove Q
                           </button>
-
                           {isCorrect && <span className="px-2.5 py-1 rounded-full bg-emerald-500/20 text-emerald-300 text-xs font-bold">Correct ✓</span>}
                           {isWrong && <span className="px-2.5 py-1 rounded-full bg-rose-500/20 text-rose-300 text-xs font-bold">Wrong ✗</span>}
                           {isSkipped && <span className="px-2.5 py-1 rounded-full bg-slate-800 text-slate-300 text-xs font-bold">Skipped</span>}
@@ -3821,13 +4029,12 @@ Include these exact 5 sections clearly formatted:
                       </div>
 
                       {revPassage && (
-                        <div className="p-3.5 rounded-xl bg-slate-950 border border-indigo-500/30 text-xs text-slate-300 whitespace-pre-line leading-relaxed">
-                          <strong className="text-indigo-400 block mb-1">📖 Passage / Cloze Paragraph:</strong>
+                        <div className="p-3.5 rounded-xl bg-slate-950 border border-indigo-500/30 text-xs text-slate-300 whitespace-pre-line">
                           {revPassage}
                         </div>
                       )}
 
-                      <p className="text-sm text-white leading-relaxed whitespace-pre-line">{revQuestion}</p>
+                      <p className="text-sm text-white whitespace-pre-line">{revQuestion}</p>
 
                       <div className="grid sm:grid-cols-2 gap-2">
                         {q.options.map((_, oIdx) => {
@@ -3842,8 +4049,7 @@ Include these exact 5 sections clearly formatted:
                             <div
                               key={oIdx}
                               onClick={() => updateCorrectOptionInReview(idx, oIdx)}
-                              title="Click to set this option as the official Answer Key"
-                              className={`p-3 rounded-xl border text-xs flex items-center justify-between cursor-pointer hover:border-indigo-400 transition ${style}`}
+                              className={`p-3 rounded-xl border text-xs flex items-center justify-between cursor-pointer ${style}`}
                             >
                               <span>{String.fromCharCode(65 + oIdx)}. {optText}</span>
                               {isRightOpt && <span>✓ Correct Key</span>}
@@ -3857,81 +4063,38 @@ Include these exact 5 sections clearly formatted:
                         <strong className="text-indigo-400">Solution: </strong> {revExplanation}
                       </div>
 
-                      {/* ==================================================================== */}
-                      {/* 🤖 ASK TO AI (WHY WRONG + SHORT TRICK) & 📖 REVISE CHAPTER BAR        */}
-                      {/* ==================================================================== */}
-                      <div className="p-3.5 rounded-xl bg-indigo-950/25 border border-indigo-500/30 space-y-3 print:hidden">
-                        <div className="flex flex-wrap items-center justify-between gap-2">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <button
-                              disabled={isAiLoading}
-                              onClick={() => handleAskAiWhyWrong(idx, customDoubtInput[idx] || '')}
-                              className="px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-xs font-extrabold flex items-center gap-1.5 shadow"
-                            >
-                              <Sparkles className="w-3.5 h-3.5" />
-                              {isAiLoading
-                                ? 'AI Coach Analyzing Your Mistake...'
-                                : savedAiCoachNote
-                                ? '🤖 Re-Ask AI (Kyun Galat Hua & Short Trick)'
-                                : '🤖 Ask AI: Mera Question Kyun Galat Hua & Short Trick'}
-                            </button>
+                      <div className="p-3.5 rounded-xl bg-indigo-950/25 border border-indigo-500/30 space-y-3">
+                        <div className="flex flex-wrap gap-2">
+                          <button
+                            disabled={isAiLoading}
+                            onClick={() => handleAskAiWhyWrong(idx, customDoubtInput[idx] || '')}
+                            className="px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-extrabold flex items-center gap-1.5"
+                          >
+                            <Sparkles className="w-3.5 h-3.5" />
+                            {isAiLoading ? 'AI Analyzing...' : '🤖 Ask AI: Kyun Galat Hua & Short Trick'}
+                          </button>
 
-                            <button
-                              onClick={() =>
-                                handleReviseChapterTopicWithAI(
-                                  q.subject || selectedAttempt.primarySubject || 'General',
-                                  q.chapter || 'General',
-                                  q.topic || 'Core Concept',
-                                  q
-                                )
-                              }
-                              className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-extrabold flex items-center gap-1.5 shadow"
-                            >
-                              <BookOpen className="w-3.5 h-3.5" />
-                              📖 Revise "{q.topic || q.chapter}" (Taaki Dubara Galti Na Ho)
-                            </button>
-                          </div>
+                          <button
+                            onClick={() =>
+                              handleReviseChapterTopicWithAI(
+                                q.subject || 'Computer Knowledge',
+                                q.chapter || 'General',
+                                q.topic || 'Core Concept',
+                                q
+                              )
+                            }
+                            className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-extrabold flex items-center gap-1.5"
+                          >
+                            <BookOpen className="w-3.5 h-3.5" />
+                            📖 Revise "{q.topic || q.chapter}" with AI
+                          </button>
                         </div>
 
-                        {/* Optional Custom Doubt Input for this specific Question */}
-                        <div className="flex gap-2">
-                          <input
-                            type="text"
-                            value={customDoubtInput[idx] || ''}
-                            onChange={(e) => setCustomDoubtInput({ ...customDoubtInput, [idx]: e.target.value })}
-                            placeholder="Is question me apna koi khas doubt puchna ho to yahan likhein aur 'Ask AI' dabayein..."
-                            className="flex-1 px-3 py-1.5 rounded-lg bg-slate-950 border border-slate-800 text-xs text-white"
-                          />
-                        </div>
-
-                        {/* Display AI Mistake Analysis & Short Trick if generated */}
                         {savedAiCoachNote && (
-                          <div className="p-4 rounded-xl bg-slate-950 border border-indigo-500/40 text-xs text-slate-200 whitespace-pre-line leading-relaxed">
-                            <div className="text-indigo-400 font-extrabold mb-1.5">
-                              🤖 AI Personal Coach Analysis (Why Wrong + Exam Short Trick):
-                            </div>
+                          <div className="p-4 rounded-xl bg-slate-950 border border-indigo-500/40 text-xs text-slate-200 whitespace-pre-line">
                             {savedAiCoachNote}
                           </div>
                         )}
-                      </div>
-
-                      <div className="pt-1">
-                        <label className="block text-xs text-amber-400 font-semibold mb-1">Meri Galti Kya Thi? (Personal Revision Note):</label>
-                        <div className="flex gap-2">
-                          <input
-                            type="text"
-                            defaultValue={selectedAttempt.notes?.[idx] || ''}
-                            onChange={(e) => setNoteInput({ ...noteInput, [idx]: e.target.value })}
-                            placeholder="Apni galti ya formula yahan likhein taaki exam se pehle revise kar sakein..."
-                            className="flex-1 px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white"
-                          />
-                          <button
-                            onClick={() => saveMistakeNote(idx, noteInput[idx] ?? selectedAttempt.notes?.[idx] ?? '')}
-                            className="px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-500 text-white text-xs font-semibold print:hidden"
-                          >
-                            Save Note
-                          </button>
-                        </div>
                       </div>
                     </div>
                   );
