@@ -26,10 +26,9 @@ import {
   RefreshCw, Edit3, Trash2, FileText, ArrowUp, ArrowDown,
   ZoomIn, ZoomOut, Pause, Play, Maximize2, Award, BarChart3,
   CheckCircle2, Home, ArrowLeft, Globe, Hash, Lock, Unlock,
-  Video, ShieldCheck, PlusCircle, ExternalLink
+  Video, ShieldCheck, PlusCircle, ExternalLink, CreditCard
 } from 'lucide-react';
 
-// Fixed: Added space after const
 const COMPUTER_COURSE_QUESTIONS = [
   {
     id: 101,
@@ -244,7 +243,6 @@ export default function App() {
   const [showKeyModal, setShowKeyModal] = useState(false);
   const [cloudSyncStatus, setCloudSyncStatus] = useState('Checking Cloud Sync...');
 
-  // Navigation & True Back Stack States
   const [activeTab, setActiveTab] = useState('home');
   const [vaultViewMode, setVaultViewMode] = useState('chapters');
   const [selectedSubjectFilter, setSelectedSubjectFilter] = useState('All');
@@ -253,7 +251,7 @@ export default function App() {
   const [navStack, setNavStack] = useState([]);
   const isPoppingRef = useRef(false);
 
-  // Course & Option 1 Subscription States
+  // Course, Razorpay Gateway & Legal Policy States
   const [coursesList, setCoursesList] = useState(() => {
     try {
       const saved = localStorage.getItem('portal_courses_list');
@@ -274,6 +272,8 @@ export default function App() {
     }
   });
   const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [showGatewaySimulator, setShowGatewaySimulator] = useState(false);
+  const [activeLegalPolicyModal, setActiveLegalPolicyModal] = useState(null); // 'terms' | 'privacy' | 'refund' | 'contact' | null
   const [unlockCodeInput, setUnlockCodeInput] = useState('');
   const [paymentSettings, setPaymentSettings] = useState(() => {
     try {
@@ -283,13 +283,15 @@ export default function App() {
         : {
             upiId: 'rohitwasnik@ybl',
             whatsappNumber: '917440000000',
-            masterUnlockCode: 'ROHITPRO'
+            masterUnlockCode: 'ROHITPRO',
+            razorpayKeyId: ''
           };
     } catch {
       return {
         upiId: 'rohitwasnik@ybl',
         whatsappNumber: '917440000000',
-        masterUnlockCode: 'ROHITPRO'
+        masterUnlockCode: 'ROHITPRO',
+        razorpayKeyId: ''
       };
     }
   });
@@ -558,7 +560,8 @@ export default function App() {
     }
   };
 
-  const handleUnlockCourseWithCode = async (courseId, directBypass = false) => {
+  // Unlock Course via Secret Code OR Automatic Razorpay Payment ID
+  const handleUnlockCourseWithCode = async (courseId, directBypass = false, paymentId = '') => {
     const cleanInput = unlockCodeInput.trim().toUpperCase();
     const masterCode = (paymentSettings.masterUnlockCode || 'ROHITPRO').toUpperCase();
 
@@ -574,10 +577,61 @@ export default function App() {
         }
       }
       setShowPaymentModal(false);
+      setShowGatewaySimulator(false);
       setUnlockCodeInput('');
-      alert('🎉 Congratulations! Course Unlocked Successfully! Ab aap saare Locked Lectures aur CBT Tests dekh sakte hain.');
+      alert(
+        paymentId
+          ? `🎉 Payment Successful (ID: ${paymentId})! Course Auto-Unlocked Instantly!`
+          : '🎉 Congratulations! Course Unlocked Successfully! Ab aap saare Locked Lectures aur CBT Tests dekh sakte hain.'
+      );
     } else {
-      alert('Invalid Unlock Code! Demo test karne ke liye "ROHITPRO" dalein ya niche "1-Click Demo Unlock" button dabayein.');
+      alert('Invalid Unlock Code! Demo test karne ke liye "ROHITPRO" dalein ya upar Online Auto-Pay button dabayein.');
+    }
+  };
+
+  // Automatic Razorpay Payment Gateway Integration (+ Built-in Sandbox Simulator if no Key is set yet)
+  const startRazorpayAutoPayment = (course) => {
+    const rzpKey = (paymentSettings.razorpayKeyId || '').trim();
+
+    if (!rzpKey) {
+      // Open Interactive Gateway Simulator so user can test 1-Second Auto-Unlock without waiting for Razorpay KYC
+      setShowGatewaySimulator(true);
+      return;
+    }
+
+    const launchCheckout = () => {
+      if (!window.Razorpay) {
+        alert('Razorpay SDK load nahi ho paya. Kripya internet connection check karein.');
+        return;
+      }
+      const options = {
+        key: rzpKey,
+        amount: (Number(course.price) || 99) * 100,
+        currency: 'INR',
+        name: 'Mains AI Mock & Course Portal',
+        description: course.title,
+        prefill: {
+          name: user?.displayName || 'Student',
+          email: user?.email || ''
+        },
+        theme: { color: '#4f46e5' },
+        handler: function (response) {
+          if (response?.razorpay_payment_id) {
+            handleUnlockCourseWithCode(course.id, true, response.razorpay_payment_id);
+          }
+        }
+      };
+      const rzp = new window.Razorpay(options);
+      rzp.open();
+    };
+
+    if (window.Razorpay) {
+      launchCheckout();
+    } else {
+      const script = document.createElement('script');
+      script.src = 'https://checkout.razorpay.com/v1/checkout.js';
+      script.onload = launchCheckout;
+      document.body.appendChild(script);
     }
   };
 
@@ -2863,14 +2917,16 @@ Include these exact 5 sections clearly formatted:
         </div>
       </header>
 
-      {/* OPTION 1: UPI QR + WHATSAPP + SECRET UNLOCK CODE MODAL */}
+      {/* ==================================================================== */}
+      {/* HYBRID PAYMENT MODAL: RAZORPAY AUTO-CHECKOUT + UPI / CODE BACKUP     */}
+      {/* ==================================================================== */}
       {showPaymentModal && currentCourse && (
         <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50">
-          <div className="bg-slate-900 border border-emerald-500/40 rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl">
+          <div className="bg-slate-900 border border-indigo-500/40 rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl">
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
               <div>
-                <span className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 text-[11px] font-bold">
-                  Option 1: Direct UPI Course Enrollment
+                <span className="px-2 py-0.5 rounded bg-indigo-500/20 text-indigo-300 text-[11px] font-bold">
+                  Instant Course Checkout
                 </span>
                 <h3 className="text-base font-extrabold text-white mt-1">{currentCourse.title}</h3>
               </div>
@@ -2882,54 +2938,170 @@ Include these exact 5 sections clearly formatted:
               </button>
             </div>
 
-            <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 text-center space-y-2">
-              <div className="text-xs text-slate-400">Course Fee (One-Time Full Access):</div>
-              <div className="text-2xl font-extrabold text-emerald-400">
-                ₹{currentCourse.price}{' '}
-                <span className="text-xs text-slate-500 line-through font-normal">₹{currentCourse.originalPrice}</span>
+            {/* Method A: Razorpay Automatic Payment Gateway (1-Second Auto-Unlock) */}
+            <div className="p-4 rounded-xl bg-gradient-to-br from-indigo-950/90 to-slate-950 border border-indigo-500/50 space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-indigo-300 flex items-center gap-1.5">
+                  <CreditCard className="w-4 h-4" /> Method 1: Instant Online Gateway
+                </span>
+                <span className="text-xl font-extrabold text-emerald-400">
+                  ₹{currentCourse.price}{' '}
+                  <span className="text-xs text-slate-500 line-through font-normal">₹{currentCourse.originalPrice}</span>
+                </span>
               </div>
-              <div className="p-2.5 rounded-lg bg-slate-900 border border-indigo-500/30 text-xs">
-                <span className="text-slate-400 block text-[11px]">Pay via GPay / PhonePe / Paytm to UPI ID:</span>
-                <span className="font-mono font-bold text-amber-300 text-sm select-all">{paymentSettings.upiId}</span>
+              <p className="text-[11px] text-slate-300">
+                GPay, PhonePe, Paytm, Card ya NetBanking se pay karein—payment safal hote hi 1 second me course apne-aap unlock ho jayega!
+              </p>
+              <button
+                onClick={() => startRazorpayAutoPayment(currentCourse)}
+                className="w-full py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-extrabold text-xs flex items-center justify-center gap-2 shadow-lg shadow-indigo-950/60 transition"
+              >
+                ⚡ Pay ₹{currentCourse.price} Online (Instant Auto-Unlock)
+              </button>
+            </div>
+
+            {/* Method B: Direct UPI + WhatsApp + Secret Unlock Code Backup */}
+            <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-2.5">
+              <div className="text-xs font-bold text-slate-300 flex items-center justify-between">
+                <span>Method 2: Direct UPI ID & Unlock Code</span>
+                <span className="font-mono text-amber-300">{paymentSettings.upiId}</span>
               </div>
+
               <a
                 href={`https://wa.me/${paymentSettings.whatsappNumber}?text=${encodeURIComponent(
                   `Hello Rohit Sir! Maine "${currentCourse.title}" (₹${currentCourse.price}) ka UPI payment kar diya hai. Mera Account Email/Username: ${user.email} hai. Kripya mera Unlock Code bhej dein!`
                 )}`}
                 target="_blank"
                 rel="noreferrer"
-                className="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center justify-center gap-1.5 shadow"
+                className="w-full py-2 rounded-xl bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/30 text-emerald-300 text-xs font-bold flex items-center justify-center gap-1.5"
               >
-                💬 Send Payment Screenshot on WhatsApp to Get Code
+                💬 Send UPI Screenshot on WhatsApp
               </a>
-            </div>
 
-            <div className="p-4 rounded-xl bg-slate-950 border border-amber-500/30 space-y-2.5">
-              <label className="block text-xs font-bold text-amber-300">
-                🔑 Enter Course Unlock Code (Demo Code: <span className="underline">ROHITPRO</span>):
-              </label>
-              <div className="flex gap-2">
+              <div className="flex gap-2 pt-1">
                 <input
                   type="text"
                   value={unlockCodeInput}
                   onChange={(e) => setUnlockCodeInput(e.target.value)}
-                  placeholder="Type ROHITPRO here..."
+                  placeholder="Enter Code (Demo: ROHITPRO)"
                   className="flex-1 px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-xs text-white font-mono uppercase"
                 />
                 <button
                   onClick={() => handleUnlockCourseWithCode(currentCourse.id, false)}
-                  className="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold"
+                  className="px-4 py-2 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-extrabold"
                 >
-                  Unlock Now
+                  Apply Code
                 </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ==================================================================== */}
+      {/* BUILT-IN RAZORPAY SANDBOX SIMULATOR (WHEN LIVE KEY IS NOT ENTERED)   */}
+      {/* ==================================================================== */}
+      {showGatewaySimulator && currentCourse && (
+        <div className="fixed inset-0 bg-black/85 flex items-center justify-center p-4 z-50">
+          <div className="bg-white text-slate-900 rounded-2xl max-w-sm w-full overflow-hidden shadow-2xl">
+            <div className="bg-[#2b54f5] text-white p-4 flex items-center justify-between">
+              <div>
+                <div className="text-[11px] opacity-85 font-semibold">Razorpay Secure Checkout (Test Mode)</div>
+                <div className="text-base font-extrabold">Mains AI Course Portal</div>
+              </div>
+              <div className="text-right">
+                <div className="text-lg font-extrabold">₹{currentCourse.price}.00</div>
+              </div>
+            </div>
+
+            <div className="p-5 space-y-4">
+              <div className="p-3 rounded-xl bg-slate-100 border border-slate-200 text-xs space-y-1">
+                <div className="font-bold text-slate-800">{currentCourse.title}</div>
+                <div className="text-slate-500">Student: {user.email}</div>
+              </div>
+
+              <div className="space-y-2 text-xs">
+                <div className="font-bold text-slate-700">Select Test Payment Method:</div>
+                <div className="p-3 rounded-xl border-2 border-[#2b54f5] bg-indigo-50/60 font-bold text-[#2b54f5] flex items-center justify-between">
+                  <span>📱 UPI (GPay / PhonePe / Paytm)</span>
+                  <span>✓</span>
+                </div>
               </div>
 
               <button
-                onClick={() => handleUnlockCourseWithCode(currentCourse.id, true)}
-                className="w-full py-2 rounded-lg bg-amber-500/20 hover:bg-amber-500 text-amber-300 hover:text-slate-950 text-xs font-extrabold transition"
+                onClick={() =>
+                  handleUnlockCourseWithCode(
+                    currentCourse.id,
+                    true,
+                    `pay_${Math.random().toString(36).substring(2, 10).toUpperCase()}`
+                  )
+                }
+                className="w-full py-3 rounded-xl bg-[#0a7c2f] hover:bg-emerald-800 text-white font-extrabold text-xs shadow-lg transition"
               >
-                ⚡ 1-Click Demo Instant Unlock (Test Unlocked View)
+                ✓ Simulate Successful ₹{currentCourse.price} Payment (Auto-Unlock)
               </button>
+
+              <button
+                onClick={() => setShowGatewaySimulator(false)}
+                className="w-full py-2 rounded-xl bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold text-xs"
+              >
+                Cancel Payment
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ==================================================================== */}
+      {/* 4 MANDATORY LEGAL POLICY PAGES MODAL (FOR GATEWAY KYC VERIFICATION)  */}
+      {/* ==================================================================== */}
+      {activeLegalPolicyModal && (
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50">
+          <div className="bg-slate-900 border border-slate-700 rounded-2xl max-w-2xl w-full max-h-[85vh] flex flex-col shadow-2xl">
+            <div className="p-4 border-b border-slate-800 flex items-center justify-between">
+              <h3 className="text-base font-extrabold text-white capitalize">
+                {activeLegalPolicyModal === 'terms' && '📜 Terms & Conditions'}
+                {activeLegalPolicyModal === 'privacy' && '🔒 Privacy Policy'}
+                {activeLegalPolicyModal === 'refund' && '💳 Refund & Cancellation Policy'}
+                {activeLegalPolicyModal === 'contact' && '📞 Contact Us & Grievance Officer'}
+              </h3>
+              <button
+                onClick={() => setActiveLegalPolicyModal(null)}
+                className="px-3 py-1 rounded-lg bg-slate-800 text-slate-300 text-xs font-bold"
+              >
+                ✕ Close
+              </button>
+            </div>
+
+            <div className="p-5 overflow-y-auto text-xs text-slate-300 space-y-3 leading-relaxed">
+              {activeLegalPolicyModal === 'terms' && (
+                <>
+                  <p><b>1. Acceptance of Terms:</b> By accessing and using Mains AI Mock & Course Portal (`mains-mock-portal-gray.vercel.app`), you agree to comply with these Terms and Conditions for online test series and digital educational batches.</p>
+                  <p><b>2. Digital Course & Test Access:</b> Enrolled courses and CBT mock tests are provided for individual student preparation only. Sharing login credentials or commercial redistribution of study material is strictly prohibited.</p>
+                  <p><b>3. Pricing & Access Validity:</b> All course fees are displayed in Indian Rupees (INR). Course access is activated immediately upon successful online payment verification.</p>
+                </>
+              )}
+              {activeLegalPolicyModal === 'privacy' && (
+                <>
+                  <p><b>1. Information We Collect:</b> We collect only basic student registration details (Name, Email/Username, and Target Exam) to synchronize your mock test scores, revision notes, and enrolled courses across devices.</p>
+                  <p><b>2. Data Security:</b> All user data is securely stored in Google Firebase Cloud Firestore. Online payments are processed via 100% PCI-DSS compliant payment gateways (Razorpay/UPI); we never store your card or banking PIN on our servers.</p>
+                </>
+              )}
+              {activeLegalPolicyModal === 'refund' && (
+                <>
+                  <p><b>1. Free Demo Before Purchase:</b> Every course and mock test batch provides a Free Demo Lecture and Demo CBT Mock Test so students can evaluate quality before making a payment.</p>
+                  <p><b>2. Refund & Cancellation Policy:</b> Since digital courses and downloadable/attemptable test series are unlocked immediately upon purchase, fees once paid are generally non-refundable. However, in case of duplicate payment or technical activation failure, a 100% refund or instant resolution will be processed within 5–7 working days.</p>
+                </>
+              )}
+              {activeLegalPolicyModal === 'contact' && (
+                <>
+                  <p><b>Platform Owner & Administrator:</b> Rohit Kumar Wasnik</p>
+                  <p><b>Official Support WhatsApp / Phone:</b> +{paymentSettings.whatsappNumber}</p>
+                  <p><b>UPI / Billing Support ID:</b> {paymentSettings.upiId}</p>
+                  <p><b>Operating Address:</b> Bhopal / Balaghat, Madhya Pradesh, India</p>
+                  <p><b>Support Response Time:</b> Within 24 Hours for all course unlock, payment, or technical queries.</p>
+                </>
+              )}
             </div>
           </div>
         </div>
@@ -3079,7 +3251,7 @@ Include these exact 5 sections clearly formatted:
                     onClick={() => setShowPaymentModal(true)}
                     className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-extrabold shadow-lg flex items-center justify-center gap-1.5"
                   >
-                    <Unlock className="w-4 h-4" /> Buy Full Course (₹{currentCourse.price})
+                    <CreditCard className="w-4 h-4" /> Buy Full Course (₹{currentCourse.price})
                   </button>
                 ) : (
                   <button
@@ -3258,7 +3430,7 @@ Include these exact 5 sections clearly formatted:
                           <div className="text-[11px] text-slate-400 flex items-center justify-between pt-1">
                             <span>Starts at [{formatHhMmSs(lec.startSec)}]</span>
                             <span className="text-indigo-400 font-semibold">
-                              {canWatch ? (isPlaying ? '▶ Playing' : '▶ Watch Now') : '🔑 Click to Unlock'}
+                              {canWatch ? (isPlaying ? '▶ Playing' : '▶ Watch Now') : '💳 Click to Unlock'}
                             </span>
                           </div>
                         </div>
@@ -3268,16 +3440,16 @@ Include these exact 5 sections clearly formatted:
                 </div>
 
                 {!isCurrentCourseUnlocked && (
-                  <div className="p-4 rounded-xl bg-gradient-to-br from-amber-500/15 to-rose-500/10 border border-amber-500/30 space-y-2.5">
-                    <div className="text-xs font-extrabold text-amber-300">
-                      🔓 Unlock All 5 Classes + AI Notes + PYQ CBT Mocks
+                  <div className="p-4 rounded-xl bg-gradient-to-br from-indigo-500/15 to-emerald-500/10 border border-indigo-500/30 space-y-2.5">
+                    <div className="text-xs font-extrabold text-indigo-300">
+                      ⚡ Instant Auto-Unlock via Razorpay / UPI
                     </div>
                     <p className="text-[11px] text-slate-300">
-                      Demo test karne ke liye niche button dabayein aur Code <b>ROHITPRO</b> use karein:
+                      Niche button dabayein aur Online Gateway ya Code <b>ROHITPRO</b> se unlock karein:
                     </p>
                     <button
                       onClick={() => setShowPaymentModal(true)}
-                      className="w-full py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-extrabold text-xs shadow"
+                      className="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs shadow"
                     >
                       Unlock Full Course @ ₹{currentCourse.price}
                     </button>
@@ -3289,22 +3461,34 @@ Include these exact 5 sections clearly formatted:
         )}
 
         {/* ==================================================================== */}
-        {/* 👑 ADMIN PANEL TAB                                                   */}
+        {/* 👑 ADMIN PANEL TAB (RAZORPAY KEY + UPI + COURSE PUBLISHER)           */}
         {/* ==================================================================== */}
         {activeTab === 'admin' && (
           <div className="grid md:grid-cols-2 gap-6">
             <div className="bg-slate-900 border border-amber-500/30 rounded-2xl p-6 space-y-4">
               <div className="flex items-center gap-2 text-amber-400 font-extrabold text-base">
                 <ShieldCheck className="w-5 h-5" />
-                <span>1. Option 1 Payment & Unlock Code Settings</span>
+                <span>1. Razorpay Gateway & UPI Payment Settings</span>
               </div>
               <p className="text-xs text-slate-400">
-                Yahan aap apni asli UPI ID, WhatsApp Number aur Master Unlock Code set kar sakte hain.
+                Yahan apni Razorpay Key ID (`rzp_test_...` ya `rzp_live_...`), UPI ID aur Master Unlock Code set karein. Agar Razorpay Key khali rakhenge, toh Built-in Test Gateway Simulator chalega.
               </p>
 
               <div className="space-y-3">
                 <div>
-                  <label className="block text-xs text-slate-300 mb-1">Your UPI ID (For Receiving Course Fees)</label>
+                  <label className="block text-xs text-indigo-300 font-bold mb-1">
+                    Razorpay Key ID (Optional — Leave blank for Built-in Simulator)
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. rzp_test_1DP5mmOlF5G5ag"
+                    value={paymentSettings.razorpayKeyId || ''}
+                    onChange={(e) => setPaymentSettings({ ...paymentSettings, razorpayKeyId: e.target.value })}
+                    className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-indigo-500/40 text-xs text-white font-mono"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-slate-300 mb-1">Your Direct UPI ID</label>
                   <input
                     type="text"
                     value={paymentSettings.upiId}
@@ -3333,11 +3517,11 @@ Include these exact 5 sections clearly formatted:
                 <button
                   onClick={() => {
                     localStorage.setItem('admin_payment_settings', JSON.stringify(paymentSettings));
-                    alert('✓ Admin Payment & Unlock Settings Saved!');
+                    alert('✓ Razorpay & UPI Payment Settings Saved!');
                   }}
                   className="w-full py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-extrabold text-xs"
                 >
-                  Save Payment & Unlock Code Settings
+                  Save Gateway & Unlock Settings
                 </button>
               </div>
             </div>
@@ -3421,7 +3605,7 @@ Include these exact 5 sections clearly formatted:
                   Welcome back, {user.displayName || 'Rohit'}!
                 </h2>
                 <p className="text-xs text-slate-300 mt-1">
-                  Aapka Computer Demo Course live ho chuka hai! Niche "🎓 Open Computer Demo Course" par click karke Video Player aur Unlock System check karein.
+                  Razorpay Automatic Checkout + UPI Unlock + AI Revision Hub ab aapke portal par live hai.
                 </p>
               </div>
               <div className="flex flex-wrap gap-2.5">
@@ -4020,7 +4204,6 @@ Include these exact 5 sections clearly formatted:
                   </div>
                 </div>
 
-                {/* 4 Pillar Analytics Cards */}
                 <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
                   <div className="p-4 rounded-2xl bg-slate-950 border border-indigo-500/30 flex flex-col justify-between">
                     <div className="flex items-center justify-between text-xs text-slate-400">
@@ -4336,6 +4519,31 @@ Include these exact 5 sections clearly formatted:
           );
         })()}
       </main>
+
+      {/* ==================================================================== */}
+      {/* FOOTER WITH 4 MANDATORY LEGAL PAGES FOR PAYMENT GATEWAY APPROVAL     */}
+      {/* ==================================================================== */}
+      <footer className="border-t border-slate-800/80 bg-slate-900/50 py-4 px-4 mt-8 print:hidden">
+        <div className="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-3 text-xs text-slate-400">
+          <div>
+            © 2026 <b>Mains AI Mock & Course Portal</b> • Built by Rohit Kumar Wasnik
+          </div>
+          <div className="flex flex-wrap items-center gap-4">
+            <button onClick={() => setActiveLegalPolicyModal('terms')} className="hover:text-indigo-400 underline">
+              Terms & Conditions
+            </button>
+            <button onClick={() => setActiveLegalPolicyModal('privacy')} className="hover:text-indigo-400 underline">
+              Privacy Policy
+            </button>
+            <button onClick={() => setActiveLegalPolicyModal('refund')} className="hover:text-indigo-400 underline">
+              Refund & Cancellation Policy
+            </button>
+            <button onClick={() => setActiveLegalPolicyModal('contact')} className="hover:text-indigo-400 underline">
+              Contact Us
+            </button>
+          </div>
+        </div>
+      </footer>
     </div>
   );
 }
