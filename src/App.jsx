@@ -29,8 +29,8 @@ import {
   Video, ShieldCheck, PlusCircle, ExternalLink
 } from 'lucide-react';
 
-// Pre-loaded CBT Questions extracted directly from the Simplicrack Computer Marathon Video
-constCOMPUTER_COURSE_QUESTIONS = [
+// Fixed: Added space after const
+const COMPUTER_COURSE_QUESTIONS = [
   {
     id: 101,
     qNum: 1,
@@ -245,7 +245,7 @@ export default function App() {
   const [cloudSyncStatus, setCloudSyncStatus] = useState('Checking Cloud Sync...');
 
   // Navigation & True Back Stack States
-  const [activeTab, setActiveTab] = useState('home'); // 'home' | 'courses' | 'create' | 'pretest' | 'test' | 'vault' | 'review' | 'admin'
+  const [activeTab, setActiveTab] = useState('home');
   const [vaultViewMode, setVaultViewMode] = useState('chapters');
   const [selectedSubjectFilter, setSelectedSubjectFilter] = useState('All');
   const [selectedAttempt, setSelectedAttempt] = useState(null);
@@ -294,7 +294,6 @@ export default function App() {
     }
   });
 
-  // Admin New Course Form States
   const [newCourseTitle, setNewCourseTitle] = useState('');
   const [newCoursePrice, setNewCoursePrice] = useState(99);
   const [newCourseYoutubeUrl, setNewCourseYoutubeUrl] = useState('');
@@ -409,18 +408,21 @@ export default function App() {
     }
   };
 
+  const handleGoBackRef = useRef(handleGoBack);
+  handleGoBackRef.current = handleGoBack;
+
   useEffect(() => {
     window.history.replaceState({ step: 0 }, '');
     const onPopState = () => {
       isPoppingRef.current = true;
-      handleGoBack();
+      handleGoBackRef.current();
       setTimeout(() => {
         isPoppingRef.current = false;
       }, 50);
     };
     window.addEventListener('popstate', onPopState);
     return () => window.removeEventListener('popstate', onPopState);
-  });
+  }, []);
 
   useEffect(() => {
     if (activeTab !== 'test' || !testRunning || isPaused) return;
@@ -556,7 +558,6 @@ export default function App() {
     }
   };
 
-  // Unlock Course via Secret Code or Instant Demo Button
   const handleUnlockCourseWithCode = async (courseId, directBypass = false) => {
     const cleanInput = unlockCodeInput.trim().toUpperCase();
     const masterCode = (paymentSettings.masterUnlockCode || 'ROHITPRO').toUpperCase();
@@ -1875,7 +1876,6 @@ Include these exact 5 sections clearly formatted:
     return Object.values(map);
   }, [selectedAttempt]);
 
-  // Live Storage Meter Calculation (KB / MB used out of 1 GB Free Firebase Tier)
   const storageStats = useMemo(() => {
     const jsonStr = JSON.stringify(savedAttempts) + JSON.stringify(savedTopicCapsules);
     const bytes = new Blob([jsonStr]).size;
@@ -2829,7 +2829,6 @@ Include these exact 5 sections clearly formatted:
               className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1 ${
                 activeTab === 'admin' ? 'bg-amber-500 text-slate-950' : 'bg-slate-800 text-amber-300 hover:bg-slate-700'
               }`}
-              title="Course & Subscription Admin Panel"
             >
               👑 Admin
             </button>
@@ -2864,9 +2863,7 @@ Include these exact 5 sections clearly formatted:
         </div>
       </header>
 
-      {/* ==================================================================== */}
-      {/* OPTION 1: UPI QR + WHATSAPP + SECRET UNLOCK CODE MODAL               */}
-      {/* ==================================================================== */}
+      {/* OPTION 1: UPI QR + WHATSAPP + SECRET UNLOCK CODE MODAL */}
       {showPaymentModal && currentCourse && (
         <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50">
           <div className="bg-slate-900 border border-emerald-500/40 rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl">
@@ -2885,7 +2882,6 @@ Include these exact 5 sections clearly formatted:
               </button>
             </div>
 
-            {/* Step 1: UPI Details & QR Box */}
             <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 text-center space-y-2">
               <div className="text-xs text-slate-400">Course Fee (One-Time Full Access):</div>
               <div className="text-2xl font-extrabold text-emerald-400">
@@ -2908,7 +2904,6 @@ Include these exact 5 sections clearly formatted:
               </a>
             </div>
 
-            {/* Step 2: Enter Unlock Code */}
             <div className="p-4 rounded-xl bg-slate-950 border border-amber-500/30 space-y-2.5">
               <label className="block text-xs font-bold text-amber-300">
                 🔑 Enter Course Unlock Code (Demo Code: <span className="underline">ROHITPRO</span>):
@@ -3002,7 +2997,7 @@ Include these exact 5 sections clearly formatted:
           <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full p-5">
             <h3 className="font-bold text-white mb-2">Google AI Studio Key (Supports Multi-Key Backup)</h3>
             <p className="text-xs text-slate-400 mb-3">
-              Apni key yahan paste karein. Agar 2-3 backup keys lagani hon, toh comma (`,`) laga kar paste kar dein—ek key ki limit khatam hone par agli key apne aap chalegi!
+              Apni key yahan paste karein. Agar 2-3 backup keys lagani hon, toh comma (`,`) laga kar paste kar dein:
             </p>
             <input
               type="text"
@@ -3042,11 +3037,10 @@ Include these exact 5 sections clearly formatted:
 
       <main className="flex-1 max-w-7xl w-full mx-auto p-4">
         {/* ==================================================================== */}
-        {/* 🎓 PAID COURSES / BATCHES DEMO TAB (WITH YOUTUBE LINK 6fBWo9XKApY)   */}
+        {/* 🎓 PAID COURSES / BATCHES DEMO TAB                                   */}
         {/* ==================================================================== */}
         {activeTab === 'courses' && currentCourse && (
           <div className="space-y-6">
-            {/* Top Course Banner */}
             <div className="bg-gradient-to-r from-emerald-950/80 via-slate-900 to-slate-900 border border-emerald-500/30 rounded-2xl p-6 flex flex-wrap items-center justify-between gap-4">
               <div className="max-w-3xl space-y-1.5">
                 <div className="flex flex-wrap items-center gap-2">
@@ -3091,7 +3085,6 @@ Include these exact 5 sections clearly formatted:
                   <button
                     onClick={() => handleLockCourseAgainForDemo(currentCourse.id)}
                     className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-[11px] font-semibold"
-                    title="Wapas Locked Student View check karne ke liye click karein"
                   >
                     🔒 Reset to Locked Demo View
                   </button>
@@ -3099,7 +3092,6 @@ Include these exact 5 sections clearly formatted:
               </div>
             </div>
 
-            {/* Course Switcher Pills if Admin added more courses */}
             {coursesList.length > 1 && (
               <div className="flex flex-wrap gap-2">
                 {coursesList.map((cItem, cIdx) => (
@@ -3120,9 +3112,7 @@ Include these exact 5 sections clearly formatted:
               </div>
             )}
 
-            {/* Main Video Player + Curriculum Split View */}
             <div className="grid lg:grid-cols-3 gap-6">
-              {/* Left 2 Columns: Embedded YouTube Course Player + Topic Timestamps */}
               <div className="lg:col-span-2 space-y-4">
                 <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-2xl">
                   <div className="aspect-video w-full bg-black relative">
@@ -3156,7 +3146,6 @@ Include these exact 5 sections clearly formatted:
                       </a>
                     </div>
 
-                    {/* Interactive Topic Timestamps inside Current Lecture */}
                     {currentLecture?.topics && currentLecture.topics.length > 0 && (
                       <div>
                         <div className="text-xs font-bold text-amber-400 mb-2">
@@ -3183,7 +3172,6 @@ Include these exact 5 sections clearly formatted:
                       </div>
                     )}
 
-                    {/* Quick AI Revision Notes & CBT Test Bar under Video */}
                     <div className="pt-3 border-t border-slate-800 flex flex-wrap gap-2">
                       <button
                         onClick={() =>
@@ -3213,7 +3201,6 @@ Include these exact 5 sections clearly formatted:
                 </div>
               </div>
 
-              {/* Right Column: Course Syllabus & Locked/Unlocked Classes List */}
               <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 flex flex-col justify-between space-y-4">
                 <div className="space-y-3">
                   <div className="flex items-center justify-between border-b border-slate-800 pb-3">
@@ -3302,7 +3289,7 @@ Include these exact 5 sections clearly formatted:
         )}
 
         {/* ==================================================================== */}
-        {/* 👑 ADMIN PANEL TAB (CREATE NEW COURSES & SET UPI / UNLOCK CODE)      */}
+        {/* 👑 ADMIN PANEL TAB                                                   */}
         {/* ==================================================================== */}
         {activeTab === 'admin' && (
           <div className="grid md:grid-cols-2 gap-6">
@@ -3312,7 +3299,7 @@ Include these exact 5 sections clearly formatted:
                 <span>1. Option 1 Payment & Unlock Code Settings</span>
               </div>
               <p className="text-xs text-slate-400">
-                Yahan aap apni asli UPI ID, WhatsApp Number aur Master Unlock Code set kar sakte hain. Student jab payment karke WhatsApp karega, toh aap use yeh Unlock Code bhej denge!
+                Yahan aap apni asli UPI ID, WhatsApp Number aur Master Unlock Code set kar sakte hain.
               </p>
 
               <div className="space-y-3">
@@ -3434,7 +3421,7 @@ Include these exact 5 sections clearly formatted:
                   Welcome back, {user.displayName || 'Rohit'}!
                 </h2>
                 <p className="text-xs text-slate-300 mt-1">
-                  Aapका Computer Demo Course live ho chuka hai! Niche "🎓 Open Computer Demo Course" par click karke Video Player aur Unlock System check karein.
+                  Aapka Computer Demo Course live ho chuka hai! Niche "🎓 Open Computer Demo Course" par click karke Video Player aur Unlock System check karein.
                 </p>
               </div>
               <div className="flex flex-wrap gap-2.5">
@@ -3847,7 +3834,15 @@ Include these exact 5 sections clearly formatted:
                           <span className="px-2.5 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 text-[11px] font-semibold">
                             {chapItem.subject}
                           </span>
-                          <span className="text-xs font-bold text-emerald-300">Accuracy: {accuracy}%</span>
+                          <div className="flex items-center gap-2">
+                            <button
+                              onClick={() => handleRenameChapterGroup(chapItem.subject, chapItem.chapter)}
+                              className="px-2 py-0.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-amber-300 text-[11px] flex items-center gap-1"
+                            >
+                              <Edit3 className="w-3 h-3" /> Rename
+                            </button>
+                            <span className="text-xs font-bold text-emerald-300">Accuracy: {accuracy}%</span>
+                          </div>
                         </div>
                         <div className="flex items-center justify-between gap-2 mt-2">
                           <h3 className="text-base font-bold text-white">Chapter: {chapItem.chapter}</h3>
@@ -3895,6 +3890,17 @@ Include these exact 5 sections clearly formatted:
                         >
                           Practice Chapter ({chapItem.totalQs} Qs)
                         </button>
+                        {chapItem.mistakeQuestions.length > 0 && (
+                          <button
+                            onClick={() => {
+                              setMockTitle(`${chapItem.chapter} (Mistakes Retry)`);
+                              startMockWithQuestions(chapItem.mistakeQuestions);
+                            }}
+                            className="px-3 py-2 rounded-xl bg-amber-500/20 text-amber-300 text-xs font-semibold"
+                          >
+                            Retry Mistakes ({chapItem.mistakeQuestions.length})
+                          </button>
+                        )}
                       </div>
                     </div>
                   );
@@ -3914,7 +3920,21 @@ Include these exact 5 sections clearly formatted:
                             onClick={() => handleCustomRenameAndOrderMockSet(idx)}
                             className="px-2.5 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500 text-amber-300 hover:text-slate-950 text-xs font-bold"
                           >
-                            🔢 Set Order
+                            🔢 Set Order / Rename
+                          </button>
+                          <button
+                            disabled={idx === 0}
+                            onClick={() => handleMoveAttemptInVault(idx, idx - 1)}
+                            className="p-1 rounded bg-slate-800 text-slate-300 disabled:opacity-30"
+                          >
+                            <ArrowUp className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            disabled={idx === savedAttempts.length - 1}
+                            onClick={() => handleMoveAttemptInVault(idx, idx + 1)}
+                            className="p-1 rounded bg-slate-800 text-slate-300 disabled:opacity-30"
+                          >
+                            <ArrowDown className="w-3.5 h-3.5" />
                           </button>
                           <button
                             onClick={() => handleDeleteAttempt(att)}
@@ -3951,18 +3971,43 @@ Include these exact 5 sections clearly formatted:
           const totalQs = selectedAttempt.questions?.length || 1;
           const attemptedQs = (selectedAttempt.correct || 0) + (selectedAttempt.wrong || 0);
           const accuracyPct = attemptedQs > 0 ? Math.round((selectedAttempt.correct / attemptedQs) * 100) : 0;
+          const scorePct = selectedAttempt.maxScore > 0
+            ? Math.max(0, Math.round((selectedAttempt.totalScore / selectedAttempt.maxScore) * 100))
+            : 0;
+          const posMarksEarned = Number(((selectedAttempt.correct || 0) * (selectedAttempt.positiveMarks || 3)).toFixed(2));
+          const negMarksLost = Number(((selectedAttempt.wrong || 0) * (selectedAttempt.negativeMarks || 1)).toFixed(2));
+          const totalSpentSec = selectedAttempt.totalTimeSpentSec || 0;
+          const avgTimePerQ = totalQs > 0 ? Math.round(totalSpentSec / totalQs) : 0;
 
           return (
             <div className="space-y-6">
-              <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-4 shadow-xl">
+              <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-5 shadow-xl">
                 <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-800 pb-4">
                   <div>
-                    <h2 className="text-xl font-extrabold text-white">{selectedAttempt.title}</h2>
-                    <p className="text-xs text-slate-400">
-                      Score: <b className="text-emerald-400">{selectedAttempt.totalScore}/{selectedAttempt.maxScore}</b> • Accuracy: <b>{accuracyPct}%</b> • Correct: {selectedAttempt.correct} • Wrong: {selectedAttempt.wrong}
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={handleGoBack}
+                        className="px-3 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-amber-300 text-xs font-bold flex items-center gap-1 print:hidden"
+                      >
+                        <ArrowLeft className="w-3.5 h-3.5" /> Back
+                      </button>
+                      <span className="px-2.5 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 text-xs font-semibold">
+                        Official Detailed Result & AI Coach Report
+                      </span>
+                    </div>
+                    <h2 className="text-xl font-extrabold text-white mt-2">{selectedAttempt.title}</h2>
+                    <p className="text-xs text-slate-400 mt-0.5">
+                      Attempted on: {selectedAttempt.dateStr} • Total Questions: {totalQs}
                     </p>
                   </div>
-                  <div className="flex gap-2">
+
+                  <div className="flex flex-wrap items-center gap-2 print:hidden">
+                    <button
+                      onClick={() => window.print()}
+                      className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-amber-300 text-xs font-bold"
+                    >
+                      🖨️ Print Result / Notes
+                    </button>
                     <button
                       onClick={() => {
                         setMockTitle(selectedAttempt.title);
@@ -3974,6 +4019,135 @@ Include these exact 5 sections clearly formatted:
                     </button>
                   </div>
                 </div>
+
+                {/* 4 Pillar Analytics Cards */}
+                <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                  <div className="p-4 rounded-2xl bg-slate-950 border border-indigo-500/30 flex flex-col justify-between">
+                    <div className="flex items-center justify-between text-xs text-slate-400">
+                      <span>Final Net Score</span>
+                      <Award className="w-4 h-4 text-indigo-400" />
+                    </div>
+                    <div className="my-2">
+                      <span className="text-3xl font-extrabold text-white">{selectedAttempt.totalScore}</span>
+                      <span className="text-sm text-slate-400"> / {selectedAttempt.maxScore}</span>
+                    </div>
+                    <div className="flex justify-between text-[11px]">
+                      <span className="text-slate-400">Score Percentage</span>
+                      <span className="font-bold text-indigo-300">{scorePct}%</span>
+                    </div>
+                  </div>
+
+                  <div className="p-4 rounded-2xl bg-slate-950 border border-emerald-500/30 flex flex-col justify-between">
+                    <div className="flex items-center justify-between text-xs text-slate-400">
+                      <span>Accuracy & Attempts</span>
+                      <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                    </div>
+                    <div className="my-2">
+                      <span className="text-3xl font-extrabold text-emerald-400">{accuracyPct}%</span>
+                      <span className="text-xs text-slate-400 ml-2">({attemptedQs}/{totalQs})</span>
+                    </div>
+                    <div className="flex justify-between text-[11px]">
+                      <span className="text-emerald-400">✓ {selectedAttempt.correct}</span>
+                      <span className="text-rose-400">✗ {selectedAttempt.wrong}</span>
+                      <span className="text-slate-400">Skip: {selectedAttempt.unattempted}</span>
+                    </div>
+                  </div>
+
+                  <div className="p-4 rounded-2xl bg-slate-950 border border-amber-500/30 flex flex-col justify-between">
+                    <div className="flex items-center justify-between text-xs text-slate-400">
+                      <span>Marks Breakdown</span>
+                      <BarChart3 className="w-4 h-4 text-amber-400" />
+                    </div>
+                    <div className="space-y-1 my-2 text-xs">
+                      <div className="flex justify-between text-emerald-300">
+                        <span>Positive:</span>
+                        <b>+{posMarksEarned}</b>
+                      </div>
+                      <div className="flex justify-between text-rose-300">
+                        <span>Negative:</span>
+                        <b>-{negMarksLost}</b>
+                      </div>
+                    </div>
+                    <div className="flex justify-between text-xs font-bold text-white border-t border-slate-800 pt-1">
+                      <span>Net Score:</span>
+                      <span>{selectedAttempt.totalScore}</span>
+                    </div>
+                  </div>
+
+                  <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 flex flex-col justify-between">
+                    <div className="flex items-center justify-between text-xs text-slate-400">
+                      <span>Time & Speed</span>
+                      <Clock className="w-4 h-4 text-amber-400" />
+                    </div>
+                    <div className="my-2">
+                      <span className="text-2xl font-extrabold text-amber-300">{formatShortTime(totalSpentSec)}</span>
+                    </div>
+                    <div className="flex justify-between text-[11px] text-slate-400 border-t border-slate-800 pt-1">
+                      <span>Avg Time / Q:</span>
+                      <span className="text-white font-bold">{avgTimePerQ} sec</span>
+                    </div>
+                  </div>
+                </div>
+
+                {selectedAttemptTopicBreakdown.length > 0 && (
+                  <div className="pt-2">
+                    <h3 className="text-xs font-bold text-indigo-300 uppercase tracking-wider mb-2">
+                      📊 Topic-Wise Performance & Instant AI Topic Revision
+                    </h3>
+                    <div className="overflow-x-auto rounded-xl border border-slate-800">
+                      <table className="w-full text-left text-xs">
+                        <thead className="bg-slate-950 text-slate-400 border-b border-slate-800">
+                          <tr>
+                            <th className="py-2 px-3">Chapter & Topic</th>
+                            <th className="py-2 px-3 text-center">Qs</th>
+                            <th className="py-2 px-3 text-center text-emerald-400">Right</th>
+                            <th className="py-2 px-3 text-center text-rose-400">Wrong</th>
+                            <th className="py-2 px-3 text-right">Master This Topic</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-800/70 bg-slate-900/50">
+                          {selectedAttemptTopicBreakdown.map((row, rIdx) => (
+                            <tr key={rIdx}>
+                              <td className="py-2 px-3 font-medium text-white">
+                                <span className="text-emerald-300">{row.chapter}</span> — {row.topic}
+                              </td>
+                              <td className="py-2 px-3 text-center">{row.total}</td>
+                              <td className="py-2 px-3 text-center text-emerald-300 font-bold">{row.correct}</td>
+                              <td className="py-2 px-3 text-center text-rose-300 font-bold">{row.wrong}</td>
+                              <td className="py-2 px-3 text-right">
+                                <button
+                                  onClick={() => handleReviseChapterTopicWithAI(row.subject, row.chapter, row.topic, row.sampleQ)}
+                                  className="px-2.5 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-[11px] font-bold"
+                                >
+                                  📖 Revise Topic
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 flex flex-wrap items-center justify-between gap-3 print:hidden">
+                <div className="text-xs font-bold text-white">
+                  Filter Questions & Manage Order (`↑` `↓` / `Set Order` / `Remove Q`):
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {['all', 'wrong', 'unattempted', 'correct', 'starred'].map((f) => (
+                    <button
+                      key={f}
+                      onClick={() => setFilterMode(f)}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-semibold capitalize ${
+                        filterMode === f ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-slate-300'
+                      }`}
+                    >
+                      {f === 'starred' ? '★ Starred' : f}
+                    </button>
+                  ))}
+                </div>
               </div>
 
               <div className="space-y-4">
@@ -3982,8 +4156,14 @@ Include these exact 5 sections clearly formatted:
                   const isCorrect = uAns === q.correctIndex;
                   const isSkipped = uAns === undefined;
                   const isWrong = !isSkipped && !isCorrect;
+                  const qSpent = selectedAttempt.questionTimeSpent?.[idx] || 0;
                   const savedAiCoachNote = selectedAttempt.aiAnalysis?.[idx] || '';
                   const isAiLoading = !!aiLoadingMap[idx];
+
+                  if (filterMode === 'wrong' && !isWrong) return null;
+                  if (filterMode === 'unattempted' && !isSkipped) return null;
+                  if (filterMode === 'correct' && !isCorrect) return null;
+                  if (filterMode === 'starred' && !q.starred) return null;
 
                   const revPassage = getLocalizedPassageText(q, testLang);
                   const revQuestion = getLocalizedQuestionText(q, testLang);
@@ -4007,14 +4187,37 @@ Include these exact 5 sections clearly formatted:
                           <span className="px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-300 text-[11px]">
                             {q.chapter} • {q.topic}
                           </span>
+                          <button
+                            onClick={() => handleEditSingleQuestionMeta(idx)}
+                            className="px-2 py-0.5 rounded bg-slate-800 text-amber-300 text-[10px]"
+                          >
+                            ✏️ Edit Topic
+                          </button>
                         </div>
 
-                        <div className="flex items-center gap-1.5">
+                        <div className="flex flex-wrap items-center gap-1.5 print:hidden">
+                          <span className="text-[11px] text-slate-400 font-mono mr-1">
+                            ⏱ {formatShortTime(qSpent)}
+                          </span>
                           <button
                             onClick={() => handleCustomOrderAndRenameQuestion(idx)}
                             className="px-2.5 py-1 rounded-lg bg-amber-500/20 text-amber-300 text-xs font-bold"
                           >
                             🔢 Set Order
+                          </button>
+                          <button
+                            disabled={idx === 0}
+                            onClick={() => handleMoveQuestionInSavedMock(idx, idx - 1)}
+                            className="px-2 py-1 rounded-lg bg-slate-800 text-slate-200 text-xs disabled:opacity-30"
+                          >
+                            ↑ Up
+                          </button>
+                          <button
+                            disabled={idx === selectedAttempt.questions.length - 1}
+                            onClick={() => handleMoveQuestionInSavedMock(idx, idx + 1)}
+                            className="px-2 py-1 rounded-lg bg-slate-800 text-slate-200 text-xs disabled:opacity-30"
+                          >
+                            ↓ Down
                           </button>
                           <button
                             onClick={() => handleRemoveQuestionFromSavedMock(idx)}
@@ -4063,7 +4266,7 @@ Include these exact 5 sections clearly formatted:
                         <strong className="text-indigo-400">Solution: </strong> {revExplanation}
                       </div>
 
-                      <div className="p-3.5 rounded-xl bg-indigo-950/25 border border-indigo-500/30 space-y-3">
+                      <div className="p-3.5 rounded-xl bg-indigo-950/25 border border-indigo-500/30 space-y-3 print:hidden">
                         <div className="flex flex-wrap gap-2">
                           <button
                             disabled={isAiLoading}
@@ -4090,11 +4293,40 @@ Include these exact 5 sections clearly formatted:
                           </button>
                         </div>
 
+                        <div className="flex gap-2">
+                          <input
+                            type="text"
+                            value={customDoubtInput[idx] || ''}
+                            onChange={(e) => setCustomDoubtInput({ ...customDoubtInput, [idx]: e.target.value })}
+                            placeholder="Is question me apna koi khas doubt puchna ho to yahan likhein aur 'Ask AI' dabayein..."
+                            className="flex-1 px-3 py-1.5 rounded-lg bg-slate-950 border border-slate-800 text-xs text-white"
+                          />
+                        </div>
+
                         {savedAiCoachNote && (
                           <div className="p-4 rounded-xl bg-slate-950 border border-indigo-500/40 text-xs text-slate-200 whitespace-pre-line">
                             {savedAiCoachNote}
                           </div>
                         )}
+                      </div>
+
+                      <div className="pt-1">
+                        <label className="block text-xs text-amber-400 font-semibold mb-1">Meri Galti Kya Thi? (Personal Revision Note):</label>
+                        <div className="flex gap-2">
+                          <input
+                            type="text"
+                            defaultValue={selectedAttempt.notes?.[idx] || ''}
+                            onChange={(e) => setNoteInput({ ...noteInput, [idx]: e.target.value })}
+                            placeholder="Apni galti ya formula yahan likhein taaki exam se pehle revise kar sakein..."
+                            className="flex-1 px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white"
+                          />
+                          <button
+                            onClick={() => saveMistakeNote(idx, noteInput[idx] ?? selectedAttempt.notes?.[idx] ?? '')}
+                            className="px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-500 text-white text-xs font-semibold print:hidden"
+                          >
+                            Save Note
+                          </button>
+                        </div>
                       </div>
                     </div>
                   );
