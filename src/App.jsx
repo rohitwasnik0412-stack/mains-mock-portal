@@ -22,64 +22,70 @@ import {
 } from 'firebase/firestore';
 import {
   BookOpen, Clock, Upload, Download, FileUp, LogOut, Key,
-  FolderKanban, Sparkles, ShieldQuestion, Filter, Layers, RefreshCw, Trash2
+  FolderKanban, Sparkles, ShieldQuestion, Filter, Layers,
+  RefreshCw, Edit3, Trash2, FileText
 } from 'lucide-react';
 
 const SAMPLE_QUESTIONS = [
   {
     id: 1,
     qNum: 1,
+    subject: "English Comprehension",
+    chapter: "Cloze Test",
+    topic: "Vocabulary & Context in Passage",
+    passage: "In the following passage, some words have been deleted. Read the passage carefully and select the most appropriate option to fill in each blank.\n\nEducation is not merely the acquisition of facts, but the (1)______ of the mind to think critically. In a rapidly changing world, students must learn to (2)______ new challenges with confidence and resilience.",
+    question: "Select the most appropriate option to fill in blank No. (1).",
+    options: ["training", "ignoring", "destruction", "limitation"],
+    correctIndex: 0,
+    explanation: "Blank (1) requires a positive noun showing development of the mind. 'Training' fits the context: 'training of the mind to think critically'."
+  },
+  {
+    id: 2,
+    qNum: 2,
+    subject: "English Comprehension",
+    chapter: "Cloze Test",
+    topic: "Vocabulary & Context in Passage",
+    passage: "In the following passage, some words have been deleted. Read the passage carefully and select the most appropriate option to fill in each blank.\n\nEducation is not merely the acquisition of facts, but the (1)______ of the mind to think critically. In a rapidly changing world, students must learn to (2)______ new challenges with confidence and resilience.",
+    question: "Select the most appropriate option to fill in blank No. (2).",
+    options: ["surrender", "confront", "avoid", "neglect"],
+    correctIndex: 1,
+    explanation: "'Confront' means to face or deal with challenges boldly, which matches 'with confidence and resilience'."
+  },
+  {
+    id: 3,
+    qNum: 3,
     subject: "Quantitative Aptitude",
     chapter: "Simple & Compound Interest",
     topic: "Rate of Simple Interest",
+    passage: "",
     question: "If a sum of ₹12,500 amounts to ₹15,500 in 4 years at the rate of simple interest, what is the rate of interest per annum?",
     options: ["5%", "6%", "6.5%", "7.5%"],
     correctIndex: 1,
     explanation: "Simple Interest (SI) = 15500 - 12500 = ₹3000. Rate = (SI × 100) / (P × T) = (3000 × 100) / (12500 × 4) = 6%."
   },
   {
-    id: 2,
-    qNum: 2,
+    id: 4,
+    qNum: 4,
     subject: "General Awareness",
     chapter: "Indian Polity",
     topic: "Constitutional Bodies (CAG)",
+    passage: "",
     question: "Under which Article of the Indian Constitution is the Comptroller and Auditor General (CAG) of India appointed?",
     options: ["Article 148", "Article 149", "Article 150", "Article 151"],
     correctIndex: 0,
     explanation: "Article 148 of the Indian Constitution provides for an independent office of the Comptroller and Auditor General of India (CAG)."
   },
   {
-    id: 3,
-    qNum: 3,
+    id: 5,
+    qNum: 5,
     subject: "Computer Knowledge",
     chapter: "Networking & Internet",
     topic: "OSI Model Layers",
+    passage: "",
     question: "In Computer Networking, which layer of the OSI model is responsible for end-to-end error recovery and flow control?",
     options: ["Network Layer", "Data Link Layer", "Transport Layer", "Session Layer"],
     correctIndex: 2,
     explanation: "The Transport Layer (Layer 4) ensures complete data transfer, end-to-end error recovery, and flow control (e.g., TCP)."
-  },
-  {
-    id: 4,
-    qNum: 4,
-    subject: "English Comprehension",
-    chapter: "Vocabulary",
-    topic: "Antonyms & Synonyms",
-    question: "Choose the word that is opposite in meaning (Antonym) to 'PERSPICACIOUS':",
-    options: ["Astute", "Obtuse", "Shrewd", "Discerning"],
-    correctIndex: 1,
-    explanation: "Perspicacious means having a ready insight into things (sharp/astute). Obtuse means slow to understand or insensitive."
-  },
-  {
-    id: 5,
-    qNum: 5,
-    subject: "Quantitative Aptitude",
-    chapter: "Algebra",
-    topic: "Cubic Identities",
-    question: "If x + (1/x) = 4, find the value of x³ + (1/x³).",
-    options: ["52", "64", "48", "56"],
-    correctIndex: 0,
-    explanation: "Formula: x³ + 1/x³ = k³ - 3k = 4³ - 3(4) = 64 - 12 = 52."
   }
 ];
 
@@ -116,6 +122,12 @@ export default function App() {
   const [durationMins, setDurationMins] = useState(20);
   const [positiveMarks, setPositiveMarks] = useState(3);
   const [negativeMarks, setNegativeMarks] = useState(1);
+
+  // Optional Manual Chapter/Subject Override (If left blank, AI decides automatically)
+  const [customSubjectInput, setCustomSubjectInput] = useState('');
+  const [customChapterInput, setCustomChapterInput] = useState('');
+  const [customTopicInput, setCustomTopicInput] = useState('');
+
   const [isGenerating, setIsGenerating] = useState(false);
   const [statusMsg, setStatusMsg] = useState('');
 
@@ -174,7 +186,7 @@ export default function App() {
         await setDoc(doc(db, 'userSettings', uid), { geminiKey }, { merge: true });
       }
     } catch (e) {
-      // Ignore settings error
+      // Ignore
     }
 
     const localRaw = localStorage.getItem(`attempts_${uid}`);
@@ -206,20 +218,6 @@ export default function App() {
     } catch (err) {
       setSavedAttempts(localList);
       setCloudSyncStatus('⚠️ Local Mode');
-    }
-  };
-
-  const handleDeleteAttempt = async (att) => {
-    if (!window.confirm(`Kya aap "${att.title}" mock test ko delete karna chahte hain?`)) return;
-    const updated = savedAttempts.filter(item => item.timestamp !== att.timestamp);
-    setSavedAttempts(updated);
-    if (user) localStorage.setItem(`attempts_${user.uid}`, JSON.stringify(updated));
-    if (att.docId) {
-      try {
-        await deleteDoc(doc(db, 'mockAttempts', att.docId));
-      } catch (e) {
-        console.error('Delete cloud error:', e);
-      }
     }
   };
 
@@ -297,7 +295,7 @@ export default function App() {
       const snap = await getDoc(doc(db, 'userProfiles', formattedEmail));
       if (snap.exists()) profile = snap.data();
     } catch (err) {
-      // Fallback to local
+      // Fallback
     }
 
     if (!profile) {
@@ -311,14 +309,14 @@ export default function App() {
 
       if (ansMatch || pinMatch) {
         setRecoveredPassBox(profile.savedPassHint || '');
-        setAuthSuccess(`✓ Identity Verified! Hello ${profile.displayName}, aapka password niche dikh raha hai. Ab aap Login kar sakte hain.`);
+        setAuthSuccess(`✓ Identity Verified! Hello ${profile.displayName}, aapka password niche dikh raha hai.`);
         return;
       } else {
-        setAuthError('Secret Answer ya Recovery PIN match nahi hua! Kripya sahi answer dalein ya niche Email Reset button dabayein.');
+        setAuthError('Secret Answer ya Recovery PIN match nahi hua!');
         return;
       }
     } else {
-      setAuthError('Is username ka Secret Question record nahi mila. Agar aapne asli Gmail ID dali thi, toh niche "Send Reset Link to Email" button dabayein.');
+      setAuthError('Is username ka Secret Question record nahi mila. Niche Email Reset button try karein.');
     }
   };
 
@@ -326,12 +324,12 @@ export default function App() {
     setAuthError('');
     setAuthSuccess('');
     if (!email.trim() || !email.includes('@')) {
-      setAuthError('Email par link bhejne ke liye kripya apna pura Gmail address (e.g. name@gmail.com) likhein.');
+      setAuthError('Email par link bhejne ke liye apna pura Gmail address (e.g. name@gmail.com) likhein.');
       return;
     }
     try {
       await sendPasswordResetEmail(auth, email.trim());
-      setAuthSuccess(`✓ Password Reset Link aapke email (${email.trim()}) par bhej diya gaya hai! Apna Inbox/Spam folder check karein.`);
+      setAuthSuccess(`✓ Password Reset Link aapke email (${email.trim()}) par bhej diya gaya hai!`);
     } catch (err) {
       setAuthError(err.message);
     }
@@ -341,14 +339,14 @@ export default function App() {
     const file = e.target.files?.[0];
     if (!file) return;
     setMockTitle(file.name.replace('.pdf', ''));
-    setStatusMsg('PDF load ho raha hai (AI Chapter & Topic Classifier Ready)...');
+    setStatusMsg('PDF load ho raha hai (Cloze Test Passage + AI Topic Scanner Ready)...');
     try {
       const arrayBuffer = await file.arrayBuffer();
       setPdfBuffer(arrayBuffer);
       const pdf = await window.pdfjsLib.getDocument({ data: arrayBuffer.slice(0) }).promise;
       setTotalPages(pdf.numPages);
       setStartPage(1);
-      setEndPage(Math.min(10, pdf.numPages));
+      setEndPage(pdf.numPages);
 
       let extracted = '';
       for (let i = 1; i <= pdf.numPages; i++) {
@@ -358,7 +356,7 @@ export default function App() {
         extracted += `\n--- Page ${i} ---\n` + pageStr;
       }
       setRawText(extracted);
-      setStatusMsg(`✓ PDF Loaded (${pdf.numPages} Pages)! AI apne aap har question ka Subject, Chapter aur Topic pehchan kar Mock banayega.`);
+      setStatusMsg(`✓ PDF Loaded (${pdf.numPages} Pages)! Ab aap Custom Range ya 'Generate Full PDF Mock (All Questions)' daba sakte hain.`);
     } catch (err) {
       setStatusMsg('PDF read error: ' + err.message);
     }
@@ -368,10 +366,10 @@ export default function App() {
     const pdf = await window.pdfjsLib.getDocument({ data: buffer.slice(0) }).promise;
     const imgs = [];
     const safeStart = Math.max(1, fromP);
-    const safeEnd = Math.min(pdf.numPages, toP, safeStart + 11);
+    const safeEnd = Math.min(pdf.numPages, toP);
 
     for (let p = safeStart; p <= safeEnd; p++) {
-      setStatusMsg(`Scanning PDF Page ${p} of ${safeEnd} (AI Vision + Topic Classifier)...`);
+      setStatusMsg(`Scanning PDF Page ${p} of ${safeEnd} (Extracting Questions & Passages)...`);
       const page = await pdf.getPage(p);
       const viewport = page.getViewport({ scale: 1.4 });
       const canvas = document.createElement('canvas');
@@ -391,7 +389,6 @@ export default function App() {
   };
 
   const callGeminiWithAnyKey = async (cleanKey, modelName, parts) => {
-    const cleanModel = modelName.replace(/^models\//, '');
     const payload = JSON.stringify({
       contents: [{ parts }],
       generationConfig: { responseMimeType: "application/json" }
@@ -399,21 +396,21 @@ export default function App() {
 
     const attempts = [
       {
-        url: `https://generativelanguage.googleapis.com/v1beta/models/${cleanModel}:generateContent`,
+        url: `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent`,
         headers: {
           'Content-Type': 'application/json',
           'x-goog-api-key': cleanKey
         }
       },
       {
-        url: `https://generativelanguage.googleapis.com/v1beta/models/${cleanModel}:generateContent`,
+        url: `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent`,
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${cleanKey}`
         }
       },
       {
-        url: `https://generativelanguage.googleapis.com/v1beta/models/${cleanModel}:generateContent?key=${encodeURIComponent(cleanKey)}`,
+        url: `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${encodeURIComponent(cleanKey)}`,
         headers: {
           'Content-Type': 'application/json'
         }
@@ -442,26 +439,8 @@ export default function App() {
     return { error: lastErr };
   };
 
-  // Auto-discover available Gemini models directly from Google API so future model updates never break!
-  const fetchAvailableGeminiModels = async (cleanKey) => {
-    try {
-      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(cleanKey)}`, {
-        headers: { 'x-goog-api-key': cleanKey }
-      });
-      const data = await res.json();
-      if (Array.isArray(data.models)) {
-        return data.models
-          .filter(m => (m.supportedGenerationMethods || []).includes('generateContent'))
-          .map(m => m.name.replace(/^models\//, ''))
-          .filter(name => name.includes('gemini'));
-      }
-    } catch (e) {
-      // Fallback to static list
-    }
-    return [];
-  };
-
-  const generateMockFromText = async () => {
+  // Supports both Range Mock (startQ to endQ) and Full PDF Mock (isFullPdf = true)
+  const generateMockFromText = async (isFullPdf = false) => {
     const cleanKey = geminiKey.trim();
     if (!cleanKey) {
       setShowKeyModal(true);
@@ -477,97 +456,152 @@ export default function App() {
     setIsGenerating(true);
 
     try {
-      let parts = [];
+      const modelsToTry = [
+        'gemini-3.0-flash',
+        'gemini-3-flash-preview',
+        'gemini-2.5-flash',
+        'gemini-2.0-flash'
+      ];
 
-      if (pdfBuffer) {
-        const imageParts = await renderPdfPagesToImages(pdfBuffer, startPage, endPage);
-        parts.push(...imageParts);
-      }
+      // Determine page batches to scan
+      const firstPage = isFullPdf ? 1 : startPage;
+      const lastPage = isFullPdf ? (totalPages || 1) : endPage;
+      const batchSize = 8; // 8 pages per AI batch so even huge PDFs & long Cloze Tests never get cut off!
 
-      setStatusMsg(`AI Vision Question ${startQ} se ${endQ} nikal raha hai aur Subject, Chapter & Topic classify kar raha hai...`);
+      let allExtractedQuestions = [];
+      let lastError = '';
 
-      const prompt = `You are an expert SSC CGL Mains & Competitive Exam AI Professor. Look carefully at the attached PDF page images and/or text.
+      const buildPrompt = (batchRangeStr) => `You are an expert SSC CGL Mains & Competitive Exam AI Professor. Look carefully at the attached PDF page images and/or text (${batchRangeStr}).
 Ignore coaching watermarks/headers like "Telegram YouTube Instagram App SSC PANACEA".
-Extract the multiple-choice questions from Question number ${startQ} to Question number ${endQ} (or all questions visible on these scanned pages).
 
-Automatically analyze each question and classify it into:
-1. "subject": Choose one standard exam subject ("Quantitative Aptitude", "Reasoning & General Intelligence", "English Comprehension", "General Awareness", "Computer Knowledge", or "Economics & Finance").
-2. "chapter": The exact syllabus chapter name (e.g., "Percentage", "Profit & Loss", "Geometry", "Indian Polity", "Modern History", "Macroeconomics", "Grammar - Error Spotting", "Networking", etc.).
-3. "topic": The specific micro-topic or concept tested (e.g., "Successive Discount", "Article 148 CAG", "Five Year Plans", "OSI Model Layer 4", etc.).
+${isFullPdf
+  ? 'Extract ALL multiple-choice questions present on these pages from start to finish.'
+  : `Extract the multiple-choice questions from Question number ${startQ} to Question number ${endQ} (or all questions visible if numbering differs).`}
+
+CRITICAL RULE FOR CLOZE TEST, READING COMPREHENSION (RC), PASSAGE, OR DATA INTERPRETATION (DI):
+- Whenever any question is part of a Cloze Test (fill in the blanks in a paragraph like (1), (2), (3), etc.), Reading Comprehension passage, or shared Direction/Table, you MUST include the COMPLETE Passage / Paragraph (with all numbered blanks visible) inside the "passage" field of EVERY question that belongs to that passage!
+- NEVER output a Cloze Test or Comprehension question with an empty "passage" field. If a question is a standalone normal question without a passage, set "passage": "".
+
+Automatically classify each question into:
+1. "subject": ("Quantitative Aptitude", "Reasoning & General Intelligence", "English Comprehension", "General Awareness", "Computer Knowledge", or "Economics & Finance")
+2. "chapter": Exact chapter name (e.g., "Cloze Test", "Reading Comprehension", "Percentage", "Indian Polity", "Macroeconomics", etc.)
+3. "topic": Specific micro-topic tested.
 
 Return ONLY a valid JSON array of objects with these exact keys:
 - "qNum": number
 - "subject": string
 - "chapter": string
 - "topic": string
-- "question": string (the complete question statement without watermarks)
+- "passage": string (FULL Cloze Test paragraph or RC Passage if applicable, otherwise "")
+- "question": string (complete question statement)
 - "options": array of 4 strings (the 4 options A, B, C, D)
-- "correctIndex": number (0 for A, 1 for B, 2 for C, 3 for D - solve accurately)
-- "explanation": string (detailed step-by-step solution + shortcut trick in Hinglish/English)
+- "correctIndex": number (0 for A, 1 for B, 2 for C, 3 for D)
+- "explanation": string (detailed step-by-step solution in Hinglish/English)`;
 
-Additional Text:
-${rawText.slice(0, 15000)}`;
+      if (pdfBuffer && totalPages > 0) {
+        for (let pStart = firstPage; pStart <= lastPage; pStart += batchSize) {
+          const pEnd = Math.min(lastPage, pStart + batchSize - 1);
+          const imageParts = await renderPdfPagesToImages(pdfBuffer, pStart, pEnd);
+          setStatusMsg(`AI extracting questions & Cloze passages from Page ${pStart} to ${pEnd}...`);
 
-      parts.push({ text: prompt });
+          const parts = [
+            ...imageParts,
+            { text: buildPrompt(`Pages ${pStart} to ${pEnd}`) }
+          ];
 
-      // Priority model list including exact gemini-3.8-flash + live discovered models
-      const discovered = await fetchAvailableGeminiModels(cleanKey);
-      const priorityModels = [
-        'gemini-3.8-flash',
-        'gemini-3.8-flash-preview',
-        'gemini-3.5-flash',
-        'gemini-3.0-flash',
-        'gemini-3-flash',
-        'gemini-2.5-flash',
-        'gemini-2.5-pro',
-        ...discovered
-      ];
-      const uniqueModels = [...new Set(priorityModels)];
-
-      let parsedQuestions = null;
-      let lastError = '';
-
-      for (let i = 0; i < uniqueModels.length; i++) {
-        const modelName = uniqueModels[i];
-        setStatusMsg(`Connecting to AI Model (${modelName})...`);
-        const result = await callGeminiWithAnyKey(cleanKey, modelName, parts);
-
-        if (result.text) {
-          try {
-            const cleanJson = result.text.replace(/```json|```/g, '').trim();
-            const parsed = JSON.parse(cleanJson);
-            if (Array.isArray(parsed) && parsed.length > 0) {
-              parsedQuestions = parsed.map((q, idx) => ({
-                ...q,
-                qNum: q.qNum || startQ + idx,
-                subject: q.subject || 'General Practice',
-                chapter: q.chapter || 'Mixed Chapter',
-                topic: q.topic || 'Core Concept'
-              }));
-              break;
+          let batchParsed = null;
+          for (const modelName of modelsToTry) {
+            const result = await callGeminiWithAnyKey(cleanKey, modelName, parts);
+            if (result.text) {
+              try {
+                const cleanJson = result.text.replace(/```json|```/g, '').trim();
+                const parsed = JSON.parse(cleanJson);
+                if (Array.isArray(parsed) && parsed.length > 0) {
+                  batchParsed = parsed;
+                  break;
+                }
+              } catch (e) {
+                lastError = e.message;
+              }
+            } else {
+              lastError = result.error;
             }
-          } catch (e) {
-            lastError = "JSON parse error: " + e.message;
           }
-        } else if (result.error) {
-          lastError = result.error;
-          // Smart Auto-Read: If server error says "Please update your code to use models/xyz", extract "xyz" and run it immediately!
-          const suggestedMatch = result.error.match(/models\/([a-zA-Z0-9.-]+)/);
-          if (suggestedMatch && suggestedMatch[1] && !uniqueModels.includes(suggestedMatch[1])) {
-            uniqueModels.splice(i + 1, 0, suggestedMatch[1]);
+
+          if (batchParsed && batchParsed.length > 0) {
+            allExtractedQuestions.push(...batchParsed);
+          }
+
+          // If user asked for a specific range and we already found enough questions, stop early
+          if (!isFullPdf && allExtractedQuestions.length >= (endQ - startQ + 1)) {
+            break;
+          }
+        }
+      } else {
+        // Direct pasted text mode
+        setStatusMsg('AI extracting questions & passages from text...');
+        const parts = [{ text: buildPrompt('Pasted Text') + `\n\nText:\n${rawText.slice(0, 35000)}` }];
+        for (const modelName of modelsToTry) {
+          const result = await callGeminiWithAnyKey(cleanKey, modelName, parts);
+          if (result.text) {
+            try {
+              const cleanJson = result.text.replace(/```json|```/g, '').trim();
+              const parsed = JSON.parse(cleanJson);
+              if (Array.isArray(parsed) && parsed.length > 0) {
+                allExtractedQuestions = parsed;
+                break;
+              }
+            } catch (e) {
+              lastError = e.message;
+            }
+          } else {
+            lastError = result.error;
           }
         }
       }
 
-      if (parsedQuestions && parsedQuestions.length > 0) {
-        const mainSub = parsedQuestions[0]?.subject || '';
-        const mainChap = parsedQuestions[0]?.chapter || '';
-        if (mockTitle === 'Mains Practice Set - 1' && mainChap) {
+      if (allExtractedQuestions.length > 0) {
+        // Post-process: Carry forward Cloze Test / RC passage if AI put it on the first question of a set, and apply optional user custom Subject/Chapter override
+        let lastKnownPassage = '';
+        const finalQuestions = allExtractedQuestions.map((q, idx) => {
+          const qTextLower = (q.question || '').toLowerCase();
+          const chapLower = (q.chapter || '').toLowerCase();
+          const isClozeOrRC =
+            chapLower.includes('cloze') ||
+            chapLower.includes('comprehension') ||
+            chapLower.includes('passage') ||
+            qTextLower.includes('blank no') ||
+            qTextLower.includes('fill in blank') ||
+            qTextLower.includes('according to the passage');
+
+          let finalPassage = (q.passage || '').trim();
+          if (finalPassage.length > 20) {
+            lastKnownPassage = finalPassage;
+          } else if (isClozeOrRC && lastKnownPassage) {
+            finalPassage = lastKnownPassage;
+          }
+
+          return {
+            ...q,
+            qNum: q.qNum || idx + 1,
+            passage: finalPassage,
+            subject: customSubjectInput.trim() || q.subject || 'General Practice',
+            chapter: customChapterInput.trim() || q.chapter || 'Mixed Chapter',
+            topic: customTopicInput.trim() || q.topic || 'Core Concept'
+          };
+        });
+
+        const mainSub = finalQuestions[0]?.subject || '';
+        const mainChap = finalQuestions[0]?.chapter || '';
+        if (isFullPdf) {
+          setMockTitle(`${mockTitle.replace(' (Full PDF)', '')} (Full PDF - ${finalQuestions.length} Qs)`);
+        } else if (mockTitle === 'Mains Practice Set - 1' && mainChap) {
           setMockTitle(`${mainSub}: ${mainChap} (Q.${startQ}-${endQ})`);
         }
-        startMockWithQuestions(parsedQuestions);
+
+        startMockWithQuestions(finalQuestions);
       } else {
-        alert(`Questions extract nahi ho paye.\nServer Message: ${lastError}`);
+        alert(`Questions extract nahi ho paye.\nReason: ${lastError}`);
       }
     } catch (err) {
       alert("Error: " + err.message);
@@ -611,14 +645,14 @@ ${rawText.slice(0, 15000)}`;
     const totalScore = (correct * positiveMarks) - (wrong * negativeMarks);
     const maxScore = activeQuestions.length * positiveMarks;
 
-    const primarySubject = [...subjectsSet][0] || 'Mixed Subject';
-    const primaryChapter = [...chaptersSet][0] || 'Mixed Chapter';
+    const primarySubject = customSubjectInput.trim() || [...subjectsSet][0] || 'Mixed Subject';
+    const primaryChapter = customChapterInput.trim() || [...chaptersSet][0] || 'Mixed Chapter';
 
     const attemptRecord = {
       uid: user?.uid || 'guest',
       userEmail: user?.email || 'guest',
-      title: mockTitle || `${primaryChapter} (Q.${startQ}-${endQ})`,
-      qRange: `Q.${startQ} - Q.${endQ}`,
+      title: mockTitle || `${primaryChapter} (${activeQuestions.length} Qs)`,
+      qRange: `Total ${activeQuestions.length} Qs`,
       primarySubject,
       primaryChapter,
       subjectsList: [...subjectsSet],
@@ -646,7 +680,7 @@ ${rawText.slice(0, 15000)}`;
         setCloudSyncStatus('✓ Cloud Synced (Laptop + Mobile)');
       }
     } catch (e) {
-      console.error("Cloud save fallback to local:", e);
+      setCloudSyncStatus('⚠️ Saved on Device');
     }
 
     const updated = [attemptRecord, ...savedAttempts];
@@ -656,6 +690,108 @@ ${rawText.slice(0, 15000)}`;
     setSelectedAttempt(attemptRecord);
     setFilterMode('all');
     setActiveTab('review');
+  };
+
+  // Rename Chapter / Subject / Topic anytime according to User Preference
+  const handleRenameChapterGroup = async (oldSubject, oldChapter) => {
+    const newChapter = window.prompt(`"${oldChapter}" chapter ka naya naam apne hisab se likhein:`, oldChapter);
+    if (!newChapter || !newChapter.trim()) return;
+    const newSubject = window.prompt(`Subject ka naam (Chahein to wahi rehne dein):`, oldSubject) || oldSubject;
+
+    const updatedAttempts = [];
+    for (const att of savedAttempts) {
+      let modified = false;
+      const newQs = (att.questions || []).map(q => {
+        const qSub = q.subject || att.primarySubject || 'General Studies';
+        const qChap = q.chapter || att.primaryChapter || 'Mixed Practice';
+        if (qSub === oldSubject && qChap === oldChapter) {
+          modified = true;
+          return { ...q, subject: newSubject.trim(), chapter: newChapter.trim() };
+        }
+        return q;
+      });
+
+      if (modified) {
+        const chaptersSet = new Set(newQs.map(q => q.chapter).filter(Boolean));
+        const subjectsSet = new Set(newQs.map(q => q.subject).filter(Boolean));
+        const updatedAtt = {
+          ...att,
+          questions: newQs,
+          primarySubject: [...subjectsSet][0] || newSubject.trim(),
+          primaryChapter: [...chaptersSet][0] || newChapter.trim(),
+          subjectsList: [...subjectsSet],
+          chaptersList: [...chaptersSet]
+        };
+        updatedAttempts.push(updatedAtt);
+        if (updatedAtt.docId) {
+          try {
+            await updateDoc(doc(db, 'mockAttempts', updatedAtt.docId), {
+              questions: newQs,
+              primarySubject: updatedAtt.primarySubject,
+              primaryChapter: updatedAtt.primaryChapter,
+              subjectsList: updatedAtt.subjectsList,
+              chaptersList: updatedAtt.chaptersList
+            });
+          } catch (e) {
+            console.error('Cloud rename err:', e);
+          }
+        }
+      } else {
+        updatedAttempts.push(att);
+      }
+    }
+
+    setSavedAttempts(updatedAttempts);
+    if (user) localStorage.setItem(`attempts_${user.uid}`, JSON.stringify(updatedAttempts));
+  };
+
+  // Edit single question's Chapter/Topic/Passage inside Revision Sheet
+  const handleEditSingleQuestionMeta = async (qIdx) => {
+    if (!selectedAttempt) return;
+    const currentQ = selectedAttempt.questions[qIdx];
+    const newChap = window.prompt('Is Question ka Chapter Name badlein:', currentQ.chapter || '');
+    if (newChap === null) return;
+    const newTop = window.prompt('Is Question ka Topic Name badlein:', currentQ.topic || '');
+    if (newTop === null) return;
+
+    const updatedQuestions = selectedAttempt.questions.map((q, i) =>
+      i === qIdx
+        ? {
+            ...q,
+            chapter: newChap.trim() || q.chapter,
+            topic: newTop.trim() || q.topic
+          }
+        : q
+    );
+
+    const updatedAttempt = { ...selectedAttempt, questions: updatedQuestions };
+    setSelectedAttempt(updatedAttempt);
+
+    const updatedList = savedAttempts.map(a => a.timestamp === selectedAttempt.timestamp ? updatedAttempt : a);
+    setSavedAttempts(updatedList);
+    if (user) localStorage.setItem(`attempts_${user.uid}`, JSON.stringify(updatedList));
+
+    if (selectedAttempt.docId) {
+      try {
+        await updateDoc(doc(db, 'mockAttempts', selectedAttempt.docId), { questions: updatedQuestions });
+      } catch (e) {
+        console.error(e);
+      }
+    }
+  };
+
+  const handleDeleteAttempt = async (attToDelete) => {
+    if (!window.confirm(`Kya aap "${attToDelete.title}" mock test ko delete karna chahte hain?`)) return;
+    const filtered = savedAttempts.filter(a => a.timestamp !== attToDelete.timestamp);
+    setSavedAttempts(filtered);
+    if (user) localStorage.setItem(`attempts_${user.uid}`, JSON.stringify(filtered));
+    if (attToDelete.docId) {
+      try {
+        await deleteDoc(doc(db, 'mockAttempts', attToDelete.docId));
+      } catch (e) {
+        console.error('Delete cloud err:', e);
+      }
+    }
   };
 
   const updateCorrectOptionInReview = async (qIdx, newCorrectIdx) => {
@@ -792,22 +928,19 @@ ${rawText.slice(0, 15000)}`;
       try {
         const imported = JSON.parse(ev.target.result);
         if (Array.isArray(imported)) {
-          const existingTimestamps = new Set(savedAttempts.map(a => a.timestamp));
-          let addedCount = 0;
           for (const item of imported) {
-            if (user && !existingTimestamps.has(item.timestamp)) {
+            if (user) {
               try {
                 const cleanItem = { ...item, uid: user.uid };
                 delete cleanItem.docId;
                 await addDoc(collection(db, 'mockAttempts'), cleanItem);
-                addedCount++;
               } catch (err) {
                 console.error('Import cloud sync err:', err);
               }
             }
           }
           if (user) await syncAndLoadUserAttempts(user);
-          alert(`Successfully synced ${addedCount} mock tests to Cloud (Laptop + Mobile)!`);
+          alert(`Successfully restored & synced ${imported.length} mock tests to Cloud!`);
         }
       } catch (err) {
         alert("Invalid backup JSON file.");
@@ -902,7 +1035,7 @@ ${rawText.slice(0, 15000)}`;
                   <span>Option 1: Registration Secret Answer se Turant Dekhein</span>
                 </div>
                 <div>
-                  <label className="block text-[11px] text-slate-400 mb-1">Aapka Secret Answer (Jo Registration me dala tha)</label>
+                  <label className="block text-[11px] text-slate-400 mb-1">Aapka Secret Answer</label>
                   <input
                     type="text"
                     placeholder="e.g. Maths / Blackbook / Chintu"
@@ -912,7 +1045,7 @@ ${rawText.slice(0, 15000)}`;
                   />
                 </div>
                 <div>
-                  <label className="block text-[11px] text-slate-400 mb-1">Ya 4-Digit Recovery PIN (Agar set kiya tha)</label>
+                  <label className="block text-[11px] text-slate-400 mb-1">Ya 4-Digit Recovery PIN</label>
                   <input
                     type="text"
                     placeholder="Optional 4-digit PIN (e.g. 2001)"
@@ -955,7 +1088,7 @@ ${rawText.slice(0, 15000)}`;
                     />
                   </div>
                   <div>
-                    <label className="block text-xs text-slate-400 mb-1">Target Exam (Apne According Set Karein)</label>
+                    <label className="block text-xs text-slate-400 mb-1">Target Exam</label>
                     <input
                       type="text"
                       value={targetExam}
@@ -1007,7 +1140,7 @@ ${rawText.slice(0, 15000)}`;
                 <div className="p-3.5 rounded-xl bg-slate-950 border border-indigo-500/30 space-y-2.5">
                   <div className="text-xs font-semibold text-amber-400 flex items-center gap-1.5">
                     <ShieldQuestion className="w-4 h-4" />
-                    <span>Password Recovery Setup (Apne According)</span>
+                    <span>Password Recovery Setup</span>
                   </div>
                   <div>
                     <label className="block text-[11px] text-slate-400 mb-1">Select or Write Your Security Question</label>
@@ -1086,4 +1219,832 @@ ${rawText.slice(0, 15000)}`;
               <h1 className="font-bold text-white text-base">Mains AI Chapter & Topic Mock Portal</h1>
               <div className="flex flex-wrap items-center gap-2">
                 <span className="text-xs text-emerald-400">Student: {user.displayName || user.email}</span>
-                <span className="text-[11px] px-2 py-0.5 rounded-full bg-slate-800 text-indigo-3
+                <span className="text-[11px] px-2 py-0.5 rounded-full bg-slate-800 text-indigo-300">
+                  {cloudSyncStatus}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              onClick={() => setActiveTab('create')}
+              className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition ${activeTab === 'create' ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-slate-300'}`}
+            >
+              + Create Mock
+            </button>
+            <button
+              onClick={() => setActiveTab('vault')}
+              className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition flex items-center gap-1.5 ${activeTab === 'vault' ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-slate-300'}`}
+            >
+              <FolderKanban className="w-3.5 h-3.5" />
+              AI Chapter & Topic Vault ({savedAttempts.length})
+            </button>
+            <button
+              onClick={() => user && syncAndLoadUserAttempts(user)}
+              title="Sync Laptop & Mobile Data"
+              className="px-2.5 py-1.5 rounded-xl text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-emerald-300 flex items-center gap-1"
+            >
+              <RefreshCw className="w-3.5 h-3.5" /> Sync
+            </button>
+            <button
+              onClick={() => setShowKeyModal(true)}
+              className="px-3 py-1.5 rounded-xl text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-amber-300 flex items-center gap-1"
+            >
+              <Key className="w-3.5 h-3.5" /> API Key
+            </button>
+            <button
+              onClick={() => signOut(auth)}
+              className="px-3 py-1.5 rounded-xl text-xs font-semibold bg-red-500/10 hover:bg-red-500/20 text-red-300 flex items-center gap-1"
+            >
+              <LogOut className="w-3.5 h-3.5" /> Logout
+            </button>
+          </div>
+        </div>
+      </header>
+
+      {showKeyModal && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full p-5">
+            <h3 className="font-bold text-white mb-2">Google AI Studio Key (`AQ.Ab8...` or `AIza...`)</h3>
+            <p className="text-xs text-slate-400 mb-3">
+              Apni key yahan Save karne par yeh aapke Cloud Account me sync ho jayegi:
+            </p>
+            <input
+              type="text"
+              value={geminiKey}
+              onChange={(e) => setGeminiKey(e.target.value)}
+              placeholder="Paste AQ.Ab8... or AIzaSy... key here"
+              className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white mb-4"
+            />
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setShowKeyModal(false)}
+                className="px-3 py-2 rounded-xl bg-slate-800 text-slate-300 text-xs"
+              >
+                Close
+              </button>
+              <button
+                onClick={async () => {
+                  const clean = geminiKey.trim();
+                  localStorage.setItem('gemini_api_key', clean);
+                  if (user) {
+                    try {
+                      await setDoc(doc(db, 'userSettings', user.uid), { geminiKey: clean }, { merge: true });
+                    } catch (e) {
+                      console.log('Key saved locally');
+                    }
+                  }
+                  setShowKeyModal(false);
+                }}
+                className="px-4 py-2 rounded-xl bg-indigo-600 text-white text-xs font-semibold"
+              >
+                Save & Sync Key
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <main className="flex-1 max-w-7xl w-full mx-auto p-4">
+        {activeTab === 'create' && (
+          <div className="grid md:grid-cols-3 gap-6">
+            <div className="md:col-span-2 bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-4">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <h2 className="text-lg font-bold text-white flex items-center gap-2">
+                    <span>1. Upload Mains PDF</span>
+                    <span className="px-2.5 py-0.5 rounded-full bg-indigo-500/20 border border-indigo-500/30 text-indigo-300 text-[11px] flex items-center gap-1">
+                      <Sparkles className="w-3 h-3" /> Cloze Test Passage + Auto Chapter AI
+                    </span>
+                  </h2>
+                </div>
+                <button
+                  onClick={() => {
+                    setMockTitle('SSC CGL Mains Demo (Cloze Test + Topic Tagged)');
+                    startMockWithQuestions(SAMPLE_QUESTIONS);
+                  }}
+                  className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold"
+                >
+                  ▶ Run Cloze Test & Topic Demo (5 Qs)
+                </button>
+              </div>
+
+              <label className="border-2 border-dashed border-slate-700 hover:border-indigo-500 rounded-2xl p-6 flex flex-col items-center justify-center cursor-pointer bg-slate-950/50 transition">
+                <Upload className="w-8 h-8 text-indigo-400 mb-2" />
+                <span className="text-sm font-medium text-slate-200">Click to Upload Question Bank PDF</span>
+                <span className="text-xs text-emerald-400 mt-1">✓ Automatically extracts Cloze Test Passages, RC Paragraphs & Chapter Names</span>
+                <input type="file" accept="application/pdf" onChange={handlePdfUpload} className="hidden" />
+              </label>
+
+              {totalPages > 0 && (
+                <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs text-indigo-400 font-semibold mb-1">
+                      Scan From PDF Page # (Total {totalPages} pages)
+                    </label>
+                    <input
+                      type="number"
+                      min={1}
+                      max={totalPages}
+                      value={startPage}
+                      onChange={(e) => setStartPage(Number(e.target.value))}
+                      className="w-full px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-sm text-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-indigo-400 font-semibold mb-1">
+                      Scan To PDF Page #
+                    </label>
+                    <input
+                      type="number"
+                      min={1}
+                      max={totalPages}
+                      value={endPage}
+                      onChange={(e) => setEndPage(Number(e.target.value))}
+                      className="w-full px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-sm text-white"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {statusMsg && (
+                <div className="p-3 rounded-xl bg-indigo-500/10 border border-indigo-500/30 text-indigo-300 text-xs">
+                  {statusMsg}
+                </div>
+              )}
+
+              <div>
+                <label className="block text-xs text-slate-400 mb-1">Or Paste Questions / Cloze Passage Directly Below:</label>
+                <textarea
+                  rows={5}
+                  value={rawText}
+                  onChange={(e) => setRawText(e.target.value)}
+                  placeholder="Agar bina PDF ke seedha Cloze Test ya Questions copy-paste karna ho to yahan dalein..."
+                  className="w-full p-3 rounded-xl bg-slate-950 border border-slate-800 text-xs text-slate-200"
+                />
+              </div>
+            </div>
+
+            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-3.5">
+              <h2 className="text-lg font-bold text-white">2. Custom Mock Settings</h2>
+              <div>
+                <label className="block text-xs text-slate-400 mb-1">Mock Test Name</label>
+                <input
+                  type="text"
+                  value={mockTitle}
+                  onChange={(e) => setMockTitle(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-sm text-white"
+                />
+              </div>
+
+              {/* Optional Custom Chapter / Subject Naming Box */}
+              <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 space-y-2.5">
+                <div className="text-xs font-semibold text-amber-400 flex items-center justify-between">
+                  <span>Custom Chapter Name (Optional)</span>
+                  <span className="text-[10px] text-slate-400 font-normal">Blank = AI Auto-Divides</span>
+                </div>
+                <input
+                  type="text"
+                  value={customSubjectInput}
+                  onChange={(e) => setCustomSubjectInput(e.target.value)}
+                  placeholder="Subject (Optional, e.g. English / Quant)"
+                  className="w-full px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-800 text-xs text-white"
+                />
+                <input
+                  type="text"
+                  value={customChapterInput}
+                  onChange={(e) => setCustomChapterInput(e.target.value)}
+                  placeholder="Chapter Name (Optional, e.g. Cloze Test Set-1)"
+                  className="w-full px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-800 text-xs text-white"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs text-slate-400 mb-1">From Question #</label>
+                  <input
+                    type="number"
+                    min={1}
+                    value={startQ}
+                    onChange={(e) => setStartQ(Number(e.target.value))}
+                    className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-sm text-white"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-slate-400 mb-1">To Question #</label>
+                  <input
+                    type="number"
+                    min={1}
+                    value={endQ}
+                    onChange={(e) => setEndQ(Number(e.target.value))}
+                    className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-sm text-white"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-3 gap-2">
+                <div>
+                  <label className="block text-[11px] text-slate-400 mb-1">Timer (Mins)</label>
+                  <input
+                    type="number"
+                    min={1}
+                    value={durationMins}
+                    onChange={(e) => setDurationMins(Number(e.target.value))}
+                    className="w-full px-2.5 py-1.5 rounded-xl bg-slate-950 border border-slate-800 text-sm text-white"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] text-slate-400 mb-1">Correct (+)</label>
+                  <input
+                    type="number"
+                    step="0.5"
+                    value={positiveMarks}
+                    onChange={(e) => setPositiveMarks(Number(e.target.value))}
+                    className="w-full px-2.5 py-1.5 rounded-xl bg-slate-950 border border-slate-800 text-sm text-emerald-400"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] text-slate-400 mb-1">Wrong (-)</label>
+                  <input
+                    type="number"
+                    step="0.25"
+                    value={negativeMarks}
+                    onChange={(e) => setNegativeMarks(Number(e.target.value))}
+                    className="w-full px-2.5 py-1.5 rounded-xl bg-slate-950 border border-slate-800 text-sm text-rose-400"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-2.5 pt-1">
+                <button
+                  disabled={isGenerating}
+                  onClick={() => generateMockFromText(false)}
+                  className="w-full py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white font-bold text-xs transition"
+                >
+                  {isGenerating ? 'AI Scanning PDF...' : `Generate Range Mock (Q.${startQ} to Q.${endQ})`}
+                </button>
+
+                <button
+                  disabled={isGenerating}
+                  onClick={() => generateMockFromText(true)}
+                  className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-bold text-xs transition flex items-center justify-center gap-1.5 shadow-lg shadow-emerald-950/50"
+                >
+                  <Sparkles className="w-4 h-4" />
+                  {isGenerating ? 'Scanning Entire PDF...' : '⚡ Generate Full PDF Mock (All Questions in PDF)'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'test' && activeQuestions.length > 0 && (
+          <div className="grid md:grid-cols-4 gap-6">
+            <div className="md:col-span-3 bg-slate-900 border border-slate-800 rounded-2xl p-6 flex flex-col justify-between">
+              <div>
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 pb-4 mb-5">
+                  <div>
+                    <span className="text-xs text-indigo-400 font-semibold">{mockTitle}</span>
+                    <h3 className="text-lg font-bold text-white">
+                      Question {currentIdx + 1} of {activeQuestions.length} (PDF Q.{activeQuestions[currentIdx].qNum || currentIdx + 1})
+                    </h3>
+                    <div className="flex flex-wrap gap-1.5 mt-2">
+                      {activeQuestions[currentIdx].subject && (
+                        <span className="px-2.5 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 text-[11px] font-semibold">
+                          {activeQuestions[currentIdx].subject}
+                        </span>
+                      )}
+                      {activeQuestions[currentIdx].chapter && (
+                        <span className="px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 text-[11px] font-semibold">
+                          Chapter: {activeQuestions[currentIdx].chapter}
+                        </span>
+                      )}
+                      {activeQuestions[currentIdx].topic && (
+                        <span className="px-2.5 py-0.5 rounded-full bg-amber-500/20 text-amber-300 text-[11px] font-semibold">
+                          Topic: {activeQuestions[currentIdx].topic}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <div className="px-4 py-2 rounded-xl bg-slate-950 border border-slate-800 flex items-center gap-2 text-amber-400 font-mono font-bold">
+                    <Clock className="w-4 h-4" />
+                    {formatTimer(timeLeft)}
+                  </div>
+                </div>
+
+                {/* Dedicated Cloze Test / Reading Comprehension Passage Box */}
+                {activeQuestions[currentIdx].passage && (
+                  <div className="mb-5 p-4 rounded-2xl bg-slate-950 border border-indigo-500/40 max-h-64 overflow-y-auto">
+                    <div className="flex items-center gap-1.5 text-xs font-bold text-indigo-400 mb-2">
+                      <FileText className="w-4 h-4" />
+                      <span>📖 Reference Passage / Cloze Test Paragraph:</span>
+                    </div>
+                    <p className="text-sm text-slate-200 leading-relaxed whitespace-pre-line">
+                      {activeQuestions[currentIdx].passage}
+                    </p>
+                  </div>
+                )}
+
+                <p className="text-base text-slate-100 leading-relaxed mb-6 whitespace-pre-line font-medium">
+                  {activeQuestions[currentIdx].question}
+                </p>
+
+                <div className="space-y-3">
+                  {activeQuestions[currentIdx].options.map((opt, oIdx) => {
+                    const selected = userAnswers[currentIdx] === oIdx;
+                    return (
+                      <button
+                        key={oIdx}
+                        onClick={() => setUserAnswers({ ...userAnswers, [currentIdx]: oIdx })}
+                        className={`w-full text-left p-4 rounded-xl border text-sm transition flex items-center gap-3 ${
+                          selected
+                            ? 'bg-indigo-600/20 border-indigo-500 text-white font-semibold'
+                            : 'bg-slate-950 border-slate-800 text-slate-300 hover:border-slate-700'
+                        }`}
+                      >
+                        <span className="w-7 h-7 rounded-lg bg-slate-900 border border-slate-700 flex items-center justify-center text-xs font-bold">
+                          {String.fromCharCode(65 + oIdx)}
+                        </span>
+                        <span>{opt}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="flex flex-wrap items-center justify-between gap-3 pt-6 mt-8 border-t border-slate-800">
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => {
+                      const copy = { ...userAnswers };
+                      delete copy[currentIdx];
+                      setUserAnswers(copy);
+                    }}
+                    className="px-3 py-2 rounded-xl bg-slate-800 text-xs text-slate-300"
+                  >
+                    Clear Response
+                  </button>
+                  <button
+                    onClick={() => setMarkedForReview({ ...markedForReview, [currentIdx]: !markedForReview[currentIdx] })}
+                    className="px-3 py-2 rounded-xl bg-amber-500/20 text-amber-300 text-xs"
+                  >
+                    {markedForReview[currentIdx] ? 'Unmark Review' : 'Mark for Review'}
+                  </button>
+                </div>
+
+                <div className="flex gap-2">
+                  <button
+                    disabled={currentIdx === 0}
+                    onClick={() => setCurrentIdx((c) => c - 1)}
+                    className="px-4 py-2 rounded-xl bg-slate-800 disabled:opacity-40 text-xs font-semibold"
+                  >
+                    Previous
+                  </button>
+                  {currentIdx < activeQuestions.length - 1 ? (
+                    <button
+                      onClick={() => setCurrentIdx((c) => c + 1)}
+                      className="px-5 py-2 rounded-xl bg-indigo-600 text-white text-xs font-semibold"
+                    >
+                      Save & Next
+                    </button>
+                  ) : (
+                    <button
+                      onClick={handleSubmitTest}
+                      className="px-6 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold"
+                    >
+                      Submit Mock Test
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 flex flex-col justify-between">
+              <div>
+                <h4 className="font-bold text-sm text-white mb-3">Question Palette</h4>
+                <div className="grid grid-cols-5 gap-2 max-h-80 overflow-y-auto pr-1">
+                  {activeQuestions.map((_, i) => {
+                    const answered = userAnswers[i] !== undefined;
+                    const marked = markedForReview[i];
+                    let bg = 'bg-slate-950 border-slate-800 text-slate-400';
+                    if (answered) bg = 'bg-emerald-600 text-white border-emerald-500';
+                    if (marked) bg = 'bg-amber-500 text-slate-950 border-amber-400';
+                    return (
+                      <button
+                        key={i}
+                        onClick={() => setCurrentIdx(i)}
+                        className={`h-9 rounded-lg border text-xs font-bold ${bg} ${currentIdx === i ? 'ring-2 ring-indigo-400' : ''}`}
+                      >
+                        {i + 1}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <button
+                onClick={handleSubmitTest}
+                className="w-full py-3 mt-6 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-sm"
+              >
+                Submit & Save to Vault
+              </button>
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'vault' && (
+          <div className="space-y-5">
+            <div className="flex flex-wrap items-center justify-between gap-3 bg-slate-900 border border-slate-800 p-4 rounded-2xl">
+              <div>
+                <h2 className="text-lg font-bold text-white flex items-center gap-2">
+                  <Layers className="w-5 h-5 text-indigo-400" />
+                  <span>AI Automatic Chapter-Wise & Topic-Wise Manager</span>
+                </h2>
+                <p className="text-xs text-slate-400">
+                  AI khud chapters divide karta hai, aur jab aap chahein "Rename Chapter" daba kar apne hisab se naam badal sakte hain.
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  onClick={() => setVaultViewMode('chapters')}
+                  className={`px-3 py-2 rounded-xl text-xs font-semibold transition ${
+                    vaultViewMode === 'chapters' ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-slate-300'
+                  }`}
+                >
+                  📚 Chapter & Topic Wise View
+                </button>
+                <button
+                  onClick={() => setVaultViewMode('tests')}
+                  className={`px-3 py-2 rounded-xl text-xs font-semibold transition ${
+                    vaultViewMode === 'tests' ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-slate-300'
+                  }`}
+                >
+                  📝 All Mock Tests ({savedAttempts.length})
+                </button>
+                <button
+                  onClick={exportBackupJSON}
+                  className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-semibold flex items-center gap-1.5"
+                >
+                  <Download className="w-4 h-4" /> Export
+                </button>
+                <label className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-semibold flex items-center gap-1.5 cursor-pointer">
+                  <FileUp className="w-4 h-4" /> Restore
+                  <input type="file" accept=".json" onChange={importBackupJSON} className="hidden" />
+                </label>
+              </div>
+            </div>
+
+            {allSubjectsList.length > 1 && (
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-xs text-slate-400 flex items-center gap-1 mr-1">
+                  <Filter className="w-3.5 h-3.5 text-indigo-400" /> Filter Subject:
+                </span>
+                {allSubjectsList.map((sub) => (
+                  <button
+                    key={sub}
+                    onClick={() => setSelectedSubjectFilter(sub)}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition ${
+                      selectedSubjectFilter === sub
+                        ? 'bg-indigo-600 text-white'
+                        : 'bg-slate-900 border border-slate-800 text-slate-300 hover:border-slate-700'
+                    }`}
+                  >
+                    {sub}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {savedAttempts.length === 0 ? (
+              <div className="bg-slate-900 border border-slate-800 rounded-2xl p-10 text-center text-slate-400">
+                Abhi tak koi mock test save nahi hua hai. "+ Create Mock" me jakar apna pehla test dein!
+              </div>
+            ) : vaultViewMode === 'chapters' ? (
+              <div className="grid md:grid-cols-2 gap-4">
+                {chapterWiseStats
+                  .filter(item => selectedSubjectFilter === 'All' || item.subject === selectedSubjectFilter)
+                  .map((chapItem, cIdx) => {
+                    const accuracy = chapItem.totalQs > 0
+                      ? Math.round((chapItem.correct / chapItem.totalQs) * 100)
+                      : 0;
+                    const topicsArr = Object.values(chapItem.topicsMap);
+
+                    return (
+                      <div key={cIdx} className="bg-slate-900 border border-slate-800 rounded-2xl p-5 flex flex-col justify-between gap-4">
+                        <div>
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="px-2.5 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 text-[11px] font-semibold">
+                              {chapItem.subject}
+                            </span>
+                            <div className="flex items-center gap-2">
+                              <button
+                                onClick={() => handleRenameChapterGroup(chapItem.subject, chapItem.chapter)}
+                                className="px-2 py-0.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-amber-300 text-[11px] flex items-center gap-1"
+                                title="Apne hisab se Chapter ya Subject ka naam badlein"
+                              >
+                                <Edit3 className="w-3 h-3" /> Rename Chapter
+                              </button>
+                              <span className={`text-xs font-bold px-2.5 py-0.5 rounded-full ${
+                                accuracy >= 75 ? 'bg-emerald-500/20 text-emerald-300' : accuracy >= 50 ? 'bg-amber-500/20 text-amber-300' : 'bg-rose-500/20 text-rose-300'
+                              }`}>
+                                Accuracy: {accuracy}%
+                              </span>
+                            </div>
+                          </div>
+
+                          <h3 className="text-base font-bold text-white mt-2">
+                            Chapter: {chapItem.chapter}
+                          </h3>
+
+                          <div className="grid grid-cols-4 gap-2 mt-3 text-center">
+                            <div className="p-2 rounded-xl bg-slate-950 border border-slate-800">
+                              <div className="text-[11px] text-slate-400">Total Qs</div>
+                              <div className="text-sm font-bold text-white">{chapItem.totalQs}</div>
+                            </div>
+                            <div className="p-2 rounded-xl bg-emerald-500/10 border border-emerald-500/20">
+                              <div className="text-[11px] text-emerald-400">Correct</div>
+                              <div className="text-sm font-bold text-emerald-300">{chapItem.correct}</div>
+                            </div>
+                            <div className="p-2 rounded-xl bg-rose-500/10 border border-rose-500/20">
+                              <div className="text-[11px] text-rose-400">Wrong</div>
+                              <div className="text-sm font-bold text-rose-300">{chapItem.wrong}</div>
+                            </div>
+                            <div className="p-2 rounded-xl bg-slate-950 border border-slate-800">
+                              <div className="text-[11px] text-slate-400">Skipped</div>
+                              <div className="text-sm font-bold text-slate-300">{chapItem.skipped}</div>
+                            </div>
+                          </div>
+
+                          <div className="mt-4">
+                            <div className="text-xs font-semibold text-slate-400 mb-2">
+                              📌 AI Topic-Wise Breakdown ({topicsArr.length} Topics):
+                            </div>
+                            <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1">
+                              {topicsArr.map((tObj, tIdx) => (
+                                <div
+                                  key={tIdx}
+                                  className="flex items-center justify-between px-3 py-1.5 rounded-xl bg-slate-950 border border-slate-800 text-xs"
+                                >
+                                  <span className="text-slate-200 font-medium truncate pr-2">
+                                    • {tObj.topic}
+                                  </span>
+                                  <div className="flex items-center gap-2 shrink-0">
+                                    <span className="text-emerald-400">{tObj.correct}✓</span>
+                                    <span className="text-rose-400">{tObj.wrong}✗</span>
+                                    <button
+                                      onClick={() => {
+                                        setMockTitle(`${chapItem.chapter} - ${tObj.topic}`);
+                                        startMockWithQuestions(tObj.questions);
+                                      }}
+                                      className="px-2 py-0.5 rounded bg-indigo-600/30 hover:bg-indigo-600 text-indigo-200 text-[10px] font-semibold"
+                                    >
+                                      Practice Topic
+                                    </button>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="flex gap-2 pt-2 border-t border-slate-800">
+                          <button
+                            onClick={() => {
+                              setMockTitle(`${chapItem.subject}: ${chapItem.chapter} (Full Chapter Practice)`);
+                              startMockWithQuestions(chapItem.allQuestions);
+                            }}
+                            className="flex-1 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold"
+                          >
+                            Practice Full Chapter ({chapItem.totalQs} Qs)
+                          </button>
+                          {chapItem.mistakeQuestions.length > 0 && (
+                            <button
+                              onClick={() => {
+                                setMockTitle(`${chapItem.chapter} (Mistakes Retry)`);
+                                startMockWithQuestions(chapItem.mistakeQuestions);
+                              }}
+                              className="px-3 py-2 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 text-xs font-semibold"
+                            >
+                              Retry Mistakes ({chapItem.mistakeQuestions.length})
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+              </div>
+            ) : (
+              <div className="grid md:grid-cols-2 gap-4">
+                {savedAttempts
+                  .filter(att => selectedSubjectFilter === 'All' || (att.subjectsList || [att.primarySubject]).includes(selectedSubjectFilter))
+                  .map((att, idx) => (
+                    <div key={idx} className="bg-slate-900 border border-slate-800 rounded-2xl p-5 flex flex-col justify-between gap-4">
+                      <div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs text-indigo-400 font-semibold">{att.qRange}</span>
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs text-slate-500">{att.dateStr}</span>
+                            <button
+                              onClick={() => handleDeleteAttempt(att)}
+                              className="text-slate-500 hover:text-rose-400"
+                              title="Delete Mock Test"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                        <h3 className="text-base font-bold text-white mt-1">{att.title}</h3>
+
+                        <div className="flex flex-wrap gap-1.5 mt-2">
+                          {(att.chaptersList || [att.primaryChapter]).filter(Boolean).slice(0, 4).map((ch, ci) => (
+                            <span key={ci} className="px-2 py-0.5 rounded-md bg-slate-950 border border-slate-800 text-[11px] text-emerald-300">
+                              #{ch}
+                            </span>
+                          ))}
+                        </div>
+
+                        <div className="grid grid-cols-4 gap-2 mt-4 text-center">
+                          <div className="p-2 rounded-xl bg-slate-950 border border-slate-800">
+                            <div className="text-xs text-slate-400">Score</div>
+                            <div className="text-sm font-bold text-white">{att.totalScore}/{att.maxScore}</div>
+                          </div>
+                          <div className="p-2 rounded-xl bg-emerald-500/10 border border-emerald-500/20">
+                            <div className="text-xs text-emerald-400">Correct</div>
+                            <div className="text-sm font-bold text-emerald-300">{att.correct}</div>
+                          </div>
+                          <div className="p-2 rounded-xl bg-rose-500/10 border border-rose-500/20">
+                            <div className="text-xs text-rose-400">Wrong</div>
+                            <div className="text-sm font-bold text-rose-300">{att.wrong}</div>
+                          </div>
+                          <div className="p-2 rounded-xl bg-slate-950 border border-slate-800">
+                            <div className="text-xs text-slate-400">Skipped</div>
+                            <div className="text-sm font-bold text-slate-300">{att.unattempted}</div>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => {
+                            setSelectedAttempt(att);
+                            setFilterMode('all');
+                            setActiveTab('review');
+                          }}
+                          className="flex-1 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold"
+                        >
+                          Revise & See Mistakes
+                        </button>
+                        <button
+                          onClick={() => {
+                            const wrongQs = att.questions.filter((q, i) => att.userAnswers?.[i] !== q.correctIndex);
+                            if (wrongQs.length === 0) {
+                              alert("Sabhi answers sahi the!");
+                              return;
+                            }
+                            setMockTitle(`${att.title} (Mistakes Retry)`);
+                            startMockWithQuestions(wrongQs);
+                          }}
+                          className="px-3 py-2 rounded-xl bg-amber-500/20 text-amber-300 text-xs font-semibold"
+                        >
+                          Retry Mistakes
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {activeTab === 'review' && selectedAttempt && (
+          <div className="space-y-4">
+            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 flex flex-wrap items-center justify-between gap-4">
+              <div>
+                <h2 className="text-lg font-bold text-white">{selectedAttempt.title} — AI Topic Revision Sheet</h2>
+                <p className="text-xs text-slate-400">
+                  Score: <b className="text-white">{selectedAttempt.totalScore}/{selectedAttempt.maxScore}</b> | Correct: {selectedAttempt.correct} | Wrong: {selectedAttempt.wrong} | Skipped: {selectedAttempt.unattempted}
+                </p>
+              </div>
+              <div className="flex gap-2">
+                {['all', 'wrong', 'unattempted', 'correct'].map((f) => (
+                  <button
+                    key={f}
+                    onClick={() => setFilterMode(f)}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-semibold capitalize ${
+                      filterMode === f ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-slate-300'
+                    }`}
+                  >
+                    {f}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              {selectedAttempt.questions.map((q, idx) => {
+                const uAns = selectedAttempt.userAnswers?.[idx];
+                const isCorrect = uAns === q.correctIndex;
+                const isSkipped = uAns === undefined;
+                const isWrong = !isSkipped && !isCorrect;
+
+                if (filterMode === 'wrong' && !isWrong) return null;
+                if (filterMode === 'unattempted' && !isSkipped) return null;
+                if (filterMode === 'correct' && !isCorrect) return null;
+
+                return (
+                  <div key={idx} className="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-xs font-bold text-indigo-400">Question {idx + 1} (PDF Q.{q.qNum || idx + 1})</span>
+                        {q.subject && (
+                          <span className="px-2 py-0.5 rounded-md bg-indigo-500/15 text-indigo-300 text-[11px]">
+                            {q.subject}
+                          </span>
+                        )}
+                        {q.chapter && (
+                          <span className="px-2 py-0.5 rounded-md bg-emerald-500/15 text-emerald-300 text-[11px]">
+                            Chapter: {q.chapter}
+                          </span>
+                        )}
+                        {q.topic && (
+                          <span className="px-2 py-0.5 rounded-md bg-amber-500/15 text-amber-300 text-[11px]">
+                            Topic: {q.topic}
+                          </span>
+                        )}
+                        <button
+                          onClick={() => handleEditSingleQuestionMeta(idx)}
+                          className="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-amber-300 text-[10px] flex items-center gap-1"
+                        >
+                          <Edit3 className="w-2.5 h-2.5" /> Edit Chapter/Topic
+                        </button>
+                      </div>
+                      {isCorrect && <span className="px-2.5 py-1 rounded-full bg-emerald-500/20 text-emerald-300 text-xs font-bold">Correct ✓</span>}
+                      {isWrong && <span className="px-2.5 py-1 rounded-full bg-rose-500/20 text-rose-300 text-xs font-bold">Wrong ✗</span>}
+                      {isSkipped && <span className="px-2.5 py-1 rounded-full bg-slate-800 text-slate-300 text-xs font-bold">Skipped</span>}
+                    </div>
+
+                    {/* Show Cloze Test / RC Passage in Revision Sheet as well */}
+                    {q.passage && (
+                      <div className="p-3.5 rounded-xl bg-slate-950 border border-indigo-500/30 text-xs text-slate-300 whitespace-pre-line leading-relaxed">
+                        <strong className="text-indigo-400 block mb-1">📖 Passage / Cloze Paragraph:</strong>
+                        {q.passage}
+                      </div>
+                    )}
+
+                    <p className="text-sm text-white leading-relaxed whitespace-pre-line">{q.question}</p>
+
+                    <div className="grid sm:grid-cols-2 gap-2">
+                      {q.options.map((opt, oIdx) => {
+                        const isRightOpt = oIdx === q.correctIndex;
+                        const isUserOpt = oIdx === uAns;
+                        let style = 'bg-slate-950 border-slate-800 text-slate-300';
+                        if (isRightOpt) style = 'bg-emerald-500/20 border-emerald-500 text-emerald-200 font-semibold';
+                        else if (isUserOpt && !isRightOpt) style = 'bg-rose-500/20 border-rose-500 text-rose-200 font-semibold';
+
+                        return (
+                          <div
+                            key={oIdx}
+                            onClick={() => updateCorrectOptionInReview(idx, oIdx)}
+                            title="Click to set this option as the official Answer Key"
+                            className={`p-3 rounded-xl border text-xs flex items-center justify-between cursor-pointer hover:border-indigo-400 transition ${style}`}
+                          >
+                            <span>{String.fromCharCode(65 + oIdx)}. {opt}</span>
+                            {isRightOpt && <span>✓ Correct Key</span>}
+                            {isUserOpt && !isRightOpt && <span>✗ Your Answer</span>}
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 text-xs text-slate-300">
+                      <strong className="text-indigo-400">Solution: </strong> {q.explanation}
+                    </div>
+
+                    <div className="pt-2">
+                      <label className="block text-xs text-amber-400 font-semibold mb-1">Meri Galti Kya Thi? (Personal Revision Note):</label>
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          defaultValue={selectedAttempt.notes?.[idx] || ''}
+                          onChange={(e) => setNoteInput({ ...noteInput, [idx]: e.target.value })}
+                          placeholder="Apni galti ya formula yahan likhein taaki exam se pehle revise kar sakein..."
+                          className="flex-1 px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white"
+                        />
+                        <button
+                          onClick={() => saveMistakeNote(idx, noteInput[idx] ?? selectedAttempt.notes?.[idx] ?? '')}
+                          className="px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-500 text-white text-xs font-semibold"
+                        >
+                          Save Note
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+      </main>
+    </div>
+  );
+}
