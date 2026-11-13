@@ -137,8 +137,8 @@ export default function App() {
   const [cloudSyncStatus, setCloudSyncStatus] = useState('Checking Cloud Sync...');
 
   // Navigation & True Back Stack States
-  const [activeTab, setActiveTab] = useState('home'); // 'home' | 'create' | 'test' | 'vault' | 'review'
-  const [vaultViewMode, setVaultViewMode] = useState('chapters'); // 'chapters' | 'tests'
+  const [activeTab, setActiveTab] = useState('home'); // 'home' | 'create' | 'pretest' | 'test' | 'vault' | 'review'
+  const [vaultViewMode, setVaultViewMode] = useState('chapters'); // 'chapters' | 'tests' | 'starred'
   const [selectedSubjectFilter, setSelectedSubjectFilter] = useState('All');
   const [selectedAttempt, setSelectedAttempt] = useState(null);
   const [filterMode, setFilterMode] = useState('all');
@@ -147,6 +147,11 @@ export default function App() {
 
   // Language State: 'hi' (Hindi), 'en' (English), 'bi' (Bilingual Both)
   const [testLang, setTestLang] = useState('hi');
+
+  // Pre-Test Option 2 Setting: Allow Option Elimination Strike-Out (Default false = Real Exam Mode)
+  const [allowOptionElimination, setAllowOptionElimination] = useState(false);
+  const [eliminatedOptions, setEliminatedOptions] = useState({});
+  const [pendingQuestionsForLaunch, setPendingQuestionsForLaunch] = useState([]);
 
   const [mockTitle, setMockTitle] = useState('Mains Practice Set - 1');
   const [rawText, setRawText] = useState('');
@@ -184,7 +189,21 @@ export default function App() {
   const [savedAttempts, setSavedAttempts] = useState([]);
   const [noteInput, setNoteInput] = useState({});
 
-  // Smart Navigation Function that records history so Back button goes 1 step back (never jumps blindly to Home)
+  // Ask AI & Topic Revision States
+  const [aiLoadingMap, setAiLoadingMap] = useState({});
+  const [customDoubtInput, setCustomDoubtInput] = useState({});
+  const [topicRevisionModalData, setTopicRevisionModalData] = useState(null);
+  const [topicRevisionLoading, setTopicRevisionLoading] = useState(false);
+  const [savedTopicCapsules, setSavedTopicCapsules] = useState(() => {
+    try {
+      const raw = localStorage.getItem('saved_topic_capsules');
+      return raw ? JSON.parse(raw) : {};
+    } catch {
+      return {};
+    }
+  });
+
+  // Smart Navigation Function
   const navigateScreen = (nextTab, options = {}) => {
     const nextVaultMode = options.vaultViewMode !== undefined ? options.vaultViewMode : vaultViewMode;
     const nextSelectedAtt = options.selectedAttempt !== undefined ? options.selectedAttempt : selectedAttempt;
@@ -241,7 +260,6 @@ export default function App() {
     }
   };
 
-  // Sync Browser / Mobile Phone Hardware Back Button with our internal step-by-step Back Stack
   useEffect(() => {
     window.history.replaceState({ step: 0 }, '');
     const onPopState = () => {
@@ -254,6 +272,38 @@ export default function App() {
     window.addEventListener('popstate', onPopState);
     return () => window.removeEventListener('popstate', onPopState);
   });
+
+  // Laptop Keyboard Shortcuts during CBT Test
+  useEffect(() => {
+    if (activeTab !== 'test' || !testRunning || isPaused) return;
+    const handleKeyDown = (e) => {
+      const tag = (e.target?.tagName || '').toLowerCase();
+      if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
+
+      if (['1', '2', '3', '4'].includes(e.key)) {
+        const optIdx = parseInt(e.key, 10) - 1;
+        setUserAnswers((prev) => ({ ...prev, [currentIdx]: optIdx }));
+      } else if (e.key === 'ArrowRight') {
+        if (currentIdx < activeQuestions.length - 1) {
+          navigateToQuestion(currentIdx + 1);
+        }
+      } else if (e.key === 'ArrowLeft') {
+        if (currentIdx > 0) {
+          navigateToQuestion(currentIdx - 1);
+        }
+      } else if (e.key.toLowerCase() === 'm') {
+        setMarkedForReview((prev) => ({ ...prev, [currentIdx]: !prev[currentIdx] }));
+      } else if (e.key.toLowerCase() === 'c') {
+        setUserAnswers((prev) => {
+          const copy = { ...prev };
+          delete copy[currentIdx];
+          return copy;
+        });
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [activeTab, testRunning, isPaused, currentIdx, activeQuestions.length]);
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (currentUser) => {
@@ -299,10 +349,19 @@ export default function App() {
 
     try {
       const keyDoc = await getDoc(doc(db, 'userSettings', uid));
-      if (keyDoc.exists() && keyDoc.data().geminiKey) {
-        const cloudKey = keyDoc.data().geminiKey;
-        setGeminiKey(cloudKey);
-        localStorage.setItem('gemini_api_key', cloudKey);
+      if (keyDoc.exists()) {
+        if (keyDoc.data().geminiKey) {
+          const cloudKey = keyDoc.data().geminiKey;
+          setGeminiKey(cloudKey);
+          localStorage.setItem('gemini_api_key', cloudKey);
+        }
+        if (keyDoc.data().topicCapsules) {
+          setSavedTopicCapsules((prev) => {
+            const merged = { ...prev, ...keyDoc.data().topicCapsules };
+            localStorage.setItem('saved_topic_capsules', JSON.stringify(merged));
+            return merged;
+          });
+        }
       } else if (geminiKey) {
         await setDoc(doc(db, 'userSettings', uid), { geminiKey }, { merge: true });
       }
@@ -509,11 +568,14 @@ export default function App() {
     return imgs;
   };
 
-  const callGeminiWithAnyKey = async (cleanKey, modelName, parts) => {
-    const payload = JSON.stringify({
-      contents: [{ parts }],
-      generationConfig: { responseMimeType: "application/json" }
-    });
+  const callGeminiWithAnyKey = async (cleanKey, modelName, parts, jsonMode = true) => {
+    const bodyObj = {
+      contents: [{ parts }]
+    };
+    if (jsonMode) {
+      bodyObj.generationConfig = { responseMimeType: "application/json" };
+    }
+    const payload = JSON.stringify(bodyObj);
 
     const attempts = [
       {
@@ -632,7 +694,7 @@ Return ONLY a valid JSON array of objects with these exact keys:
 
           let batchParsed = null;
           for (const modelName of modelsToTry) {
-            const result = await callGeminiWithAnyKey(cleanKey, modelName, parts);
+            const result = await callGeminiWithAnyKey(cleanKey, modelName, parts, true);
             if (result.text) {
               try {
                 const cleanJson = result.text.replace(/```json|```/g, '').trim();
@@ -661,7 +723,7 @@ Return ONLY a valid JSON array of objects with these exact keys:
         setStatusMsg('AI extracting Bilingual questions & passages from text...');
         const parts = [{ text: buildPrompt('Pasted Text') + `\n\nText:\n${rawText.slice(0, 35000)}` }];
         for (const modelName of modelsToTry) {
-          const result = await callGeminiWithAnyKey(cleanKey, modelName, parts);
+          const result = await callGeminiWithAnyKey(cleanKey, modelName, parts, true);
           if (result.text) {
             try {
               const cleanJson = result.text.replace(/```json|```/g, '').trim();
@@ -710,6 +772,7 @@ Return ONLY a valid JSON array of objects with these exact keys:
             ...q,
             qNum: q.qNum || idx + 1,
             customLabel: q.customLabel || `Q.${idx + 1}`,
+            starred: !!q.starred,
             passage: finalPassage,
             passageHi: finalPassageHi || finalPassage,
             question: q.question || q.questionHi || '',
@@ -744,11 +807,20 @@ Return ONLY a valid JSON array of objects with these exact keys:
     }
   };
 
+  // Opens Pre-Test Instructions & Mode Selection Screen before starting the timer!
   const startMockWithQuestions = (qList) => {
+    setPendingQuestionsForLaunch(qList);
+    navigateScreen('pretest');
+  };
+
+  // Actually launches the CBT Exam after user confirms pre-test settings (Language & Option 2 Elimination Mode)
+  const confirmAndLaunchCbtExam = () => {
+    const qList = pendingQuestionsForLaunch.length > 0 ? pendingQuestionsForLaunch : SAMPLE_QUESTIONS;
     setActiveQuestions(qList);
     setCurrentIdx(0);
     setUserAnswers({});
     setMarkedForReview({});
+    setEliminatedOptions({});
     setVisitedQuestions({ 0: true });
     setQuestionTimeSpent({});
     setIsPaused(false);
@@ -771,7 +843,28 @@ Return ONLY a valid JSON array of objects with these exact keys:
     }
   };
 
-  // Helper to get Question/Option text based on selected language ('hi', 'en', 'bi')
+  // Toggle Star / Bookmark on a question during active CBT test
+  const toggleStarInActiveTest = (idx) => {
+    setActiveQuestions((prev) =>
+      prev.map((q, i) => (i === idx ? { ...q, starred: !q.starred } : q))
+    );
+  };
+
+  // Toggle 50-50 Option Elimination Strike-Out during CBT test (only if enabled before test)
+  const toggleOptionStrikeOut = (qIdx, oIdx, e) => {
+    e.stopPropagation();
+    setEliminatedOptions((prev) => {
+      const qMap = prev[qIdx] || {};
+      return {
+        ...prev,
+        [qIdx]: {
+          ...qMap,
+          [oIdx]: !qMap[oIdx]
+        }
+      };
+    });
+  };
+
   const getLocalizedQuestionText = (q, lang = testLang) => {
     const en = q.question || '';
     const hi = q.questionHi || en;
@@ -860,7 +953,8 @@ Return ONLY a valid JSON array of objects with these exact keys:
       unattempted,
       questions: activeQuestions,
       userAnswers,
-      notes: {}
+      notes: {},
+      aiAnalysis: {}
     };
 
     try {
@@ -887,7 +981,7 @@ Return ONLY a valid JSON array of objects with these exact keys:
     navigateScreen('review', { selectedAttempt: attemptRecord, filterMode: 'all' });
   };
 
-  const recalculateAndSaveAttempt = async (baseAttempt, newQuestions, newAnswers, newNotes, newTimeSpent) => {
+  const recalculateAndSaveAttempt = async (baseAttempt, newQuestions, newAnswers, newNotes, newTimeSpent, newAiAnalysis = null) => {
     let correct = 0, wrong = 0, unattempted = 0;
     const subjectsSet = new Set();
     const chaptersSet = new Set();
@@ -916,6 +1010,7 @@ Return ONLY a valid JSON array of objects with these exact keys:
       userAnswers: newAnswers,
       notes: newNotes,
       questionTimeSpent: newTimeSpent,
+      aiAnalysis: newAiAnalysis !== null ? newAiAnalysis : (baseAttempt.aiAnalysis || {}),
       correct,
       wrong,
       unattempted,
@@ -939,6 +1034,7 @@ Return ONLY a valid JSON array of objects with these exact keys:
           userAnswers: newAnswers,
           notes: newNotes,
           questionTimeSpent: newTimeSpent,
+          aiAnalysis: updatedAttempt.aiAnalysis,
           correct,
           wrong,
           unattempted,
@@ -951,6 +1047,199 @@ Return ONLY a valid JSON array of objects with these exact keys:
       } catch (e) {
         console.error("Cloud update error:", e);
       }
+    }
+  };
+
+  // Toggle Star / Bookmark on a question inside Revision Sheet
+  const toggleStarInReview = async (qIdx) => {
+    if (!selectedAttempt) return;
+    const updatedQuestions = selectedAttempt.questions.map((q, i) =>
+      i === qIdx ? { ...q, starred: !q.starred } : q
+    );
+    await recalculateAndSaveAttempt(
+      selectedAttempt,
+      updatedQuestions,
+      selectedAttempt.userAnswers || {},
+      selectedAttempt.notes || {},
+      selectedAttempt.questionTimeSpent || {}
+    );
+  };
+
+  // ============================================================================
+  // 🤖 FEATURE 1: "ASK TO AI" ON ANY QUESTION (Why Wrong + Trap + Short Trick + Custom Doubt)
+  // ============================================================================
+  const handleAskAiWhyWrong = async (qIdx, customDoubtText = '') => {
+    if (!selectedAttempt) return;
+    const cleanKey = geminiKey.trim();
+    if (!cleanKey) {
+      setShowKeyModal(true);
+      alert("Ask AI use karne ke liye kripya upar 'API Key' button me apni Gemini API key check karein.");
+      return;
+    }
+
+    const q = selectedAttempt.questions[qIdx];
+    const uAns = selectedAttempt.userAnswers?.[qIdx];
+    const userChosenStr = uAns !== undefined
+      ? `Option ${String.fromCharCode(65 + uAns)}: "${q.options?.[uAns]}"`
+      : 'Skipped (Unattempted)';
+    const correctOptStr = `Option ${String.fromCharCode(65 + (q.correctIndex || 0))}: "${q.options?.[q.correctIndex || 0]}"`;
+
+    setAiLoadingMap((prev) => ({ ...prev, [qIdx]: true }));
+
+    try {
+      const prompt = `You are a personal SSC CGL Mains Topper Coach guiding Rohit.
+Analyze this exam question and explain clearly in Hinglish / Devanagari Hindi why the student made a mistake (or how to master it) so they never repeat this error.
+
+Subject: ${q.subject || 'General'} | Chapter: ${q.chapter || 'General'} | Topic: ${q.topic || 'Core Concept'}
+${q.passage ? `Passage: ${q.passage}\n` : ''}
+Question: ${q.question}
+Hindi Question: ${q.questionHi || ''}
+Options:
+A) ${q.options?.[0]}
+B) ${q.options?.[1]}
+C) ${q.options?.[2]}
+D) ${q.options?.[3]}
+
+Student's Response: ${userChosenStr}
+Official Correct Answer: ${correctOptStr}
+${customDoubtText ? `\nStudent's Specific Doubt: "${customDoubtText}" (Answer this doubt directly as well!)` : ''}
+
+Give a structured, high-impact response in Hinglish/Hindi with these exact 4 sections:
+1. 🎯 **Question Kyun Galat Hua (Examiner Trap Analysis):** Explain specifically why ${userChosenStr} is wrong/tricky and why ${correctOptStr} is 100% right.
+2. ⚡ **10-Second Exam Short Trick / Elimination Method:** Fastest way to crack this in the exam hall.
+3. 🧠 **Core Concept & Golden Rule:** The exact formula, grammar rule, or fact behind this question.
+4. ✅ **Memory Hook (Taaki Dubara Galti Na Ho):** A 1-line trick to lock this in permanent memory.`;
+
+      const modelsToTry = ['gemini-3.0-flash', 'gemini-3-flash-preview', 'gemini-2.5-flash', 'gemini-2.0-flash'];
+      let replyText = '';
+      let lastErr = '';
+
+      for (const modelName of modelsToTry) {
+        const res = await callGeminiWithAnyKey(cleanKey, modelName, [{ text: prompt }], false);
+        if (res.text) {
+          replyText = res.text.trim();
+          break;
+        } else {
+          lastErr = res.error;
+        }
+      }
+
+      if (replyText) {
+        const updatedAiMap = {
+          ...(selectedAttempt.aiAnalysis || {}),
+          [qIdx]: replyText
+        };
+        await recalculateAndSaveAttempt(
+          selectedAttempt,
+          selectedAttempt.questions,
+          selectedAttempt.userAnswers || {},
+          selectedAttempt.notes || {},
+          selectedAttempt.questionTimeSpent || {},
+          updatedAiMap
+        );
+      } else {
+        alert("AI Coach Error: " + lastErr);
+      }
+    } catch (err) {
+      alert("Error: " + err.message);
+    } finally {
+      setAiLoadingMap((prev) => ({ ...prev, [qIdx]: false }));
+    }
+  };
+
+  // ============================================================================
+  // 📖 FEATURE 2: "REVISE THE CHAPTER / TOPIC" AI MASTER CAPSULE
+  // ============================================================================
+  const handleReviseChapterTopicWithAI = async (subject, chapter, topic = 'Complete Chapter', sampleQ = null, forceRegenerate = false) => {
+    const capsuleKey = `${subject}__${chapter}__${topic}`;
+    if (!forceRegenerate && savedTopicCapsules[capsuleKey]) {
+      setTopicRevisionModalData({
+        key: capsuleKey,
+        subject,
+        chapter,
+        topic,
+        content: savedTopicCapsules[capsuleKey]
+      });
+      return;
+    }
+
+    const cleanKey = geminiKey.trim();
+    if (!cleanKey) {
+      setShowKeyModal(true);
+      alert("Topic Revision Notes generate karne ke liye kripya 'API Key' check karein.");
+      return;
+    }
+
+    setTopicRevisionModalData({
+      key: capsuleKey,
+      subject,
+      chapter,
+      topic,
+      content: ''
+    });
+    setTopicRevisionLoading(true);
+
+    try {
+      const prompt = `You are an expert SSC CGL Mains (AAO / GST Inspector) & DSSSB ASO Professor.
+Create a complete, high-scoring **"Master Topic Revision Capsule"** in Hinglish + Devanagari Hindi so the student never makes any mistake from this chapter/topic again!
+
+Subject: ${subject}
+Chapter: ${chapter}
+Topic Focus: ${topic}
+${sampleQ ? `Reference Question from this Topic: ${sampleQ.question}` : ''}
+
+Include these exact 5 sections clearly formatted:
+1. 📌 **Complete Concept & Theory Summary (Easy Hinglish/Hindi me):** Explain the core concept from zero to Mains level.
+2. 📐 **All Important Formulas / Grammar Rules / Articles / Facts Sheet:** Bullet-point list of every high-frequency rule/formula in this topic.
+3. ⚠️ **Top 5 Examiner Traps (Jahan Students Galti Karte Hain):** Common silly mistakes and exceptions to watch out for.
+4. ⚡ **Mains Exam Shortcut Tricks:** Fast calculation or option-elimination tricks for this chapter.
+5. 📝 **3 High-Level Solved Practice Examples:** 3 exam-oriented questions with step-by-step short solutions.`;
+
+      const modelsToTry = ['gemini-3.0-flash', 'gemini-3-flash-preview', 'gemini-2.5-flash', 'gemini-2.0-flash'];
+      let capsuleText = '';
+      let lastErr = '';
+
+      for (const modelName of modelsToTry) {
+        const res = await callGeminiWithAnyKey(cleanKey, modelName, [{ text: prompt }], false);
+        if (res.text) {
+          capsuleText = res.text.trim();
+          break;
+        } else {
+          lastErr = res.error;
+        }
+      }
+
+      if (capsuleText) {
+        const updatedCapsules = {
+          ...savedTopicCapsules,
+          [capsuleKey]: capsuleText
+        };
+        setSavedTopicCapsules(updatedCapsules);
+        localStorage.setItem('saved_topic_capsules', JSON.stringify(updatedCapsules));
+        setTopicRevisionModalData({
+          key: capsuleKey,
+          subject,
+          chapter,
+          topic,
+          content: capsuleText
+        });
+
+        if (user) {
+          try {
+            await setDoc(doc(db, 'userSettings', user.uid), { topicCapsules: updatedCapsules }, { merge: true });
+          } catch (e) {
+            // Ignore
+          }
+        }
+      } else {
+        setTopicRevisionModalData(null);
+        alert("Revision Notes generate nahi ho paye: " + lastErr);
+      }
+    } catch (err) {
+      setTopicRevisionModalData(null);
+      alert("Error: " + err.message);
+    } finally {
+      setTopicRevisionLoading(false);
     }
   };
 
@@ -968,6 +1257,7 @@ Return ONLY a valid JSON array of objects with these exact keys:
     const newAnswers = {};
     const newNotes = {};
     const newTimeSpent = {};
+    const newAiAnalysis = {};
 
     selectedAttempt.questions.forEach((q, i) => {
       if (i === qIdx) return;
@@ -986,9 +1276,12 @@ Return ONLY a valid JSON array of objects with these exact keys:
       if (selectedAttempt.questionTimeSpent?.[i] !== undefined) {
         newTimeSpent[newIndex] = selectedAttempt.questionTimeSpent[i];
       }
+      if (selectedAttempt.aiAnalysis?.[i] !== undefined) {
+        newAiAnalysis[newIndex] = selectedAttempt.aiAnalysis[i];
+      }
     });
 
-    await recalculateAndSaveAttempt(selectedAttempt, newQuestions, newAnswers, newNotes, newTimeSpent);
+    await recalculateAndSaveAttempt(selectedAttempt, newQuestions, newAnswers, newNotes, newTimeSpent, newAiAnalysis);
   };
 
   const handleMoveQuestionInSavedMock = async (fromIdx, toIdx, customOrderTitle = null) => {
@@ -1000,7 +1293,8 @@ Return ONLY a valid JSON array of objects with these exact keys:
       q: i === fromIdx && customOrderTitle ? { ...q, customLabel: customOrderTitle } : q,
       ans: selectedAttempt.userAnswers?.[i],
       note: selectedAttempt.notes?.[i],
-      time: selectedAttempt.questionTimeSpent?.[i]
+      time: selectedAttempt.questionTimeSpent?.[i],
+      ai: selectedAttempt.aiAnalysis?.[i]
     }));
 
     if (fromIdx !== toIdx) {
@@ -1012,6 +1306,7 @@ Return ONLY a valid JSON array of objects with these exact keys:
     const newAnswers = {};
     const newNotes = {};
     const newTimeSpent = {};
+    const newAiAnalysis = {};
 
     itemBundle.forEach((bundle, newIdx) => {
       newQuestions.push({
@@ -1021,12 +1316,12 @@ Return ONLY a valid JSON array of objects with these exact keys:
       if (bundle.ans !== undefined) newAnswers[newIdx] = bundle.ans;
       if (bundle.note !== undefined) newNotes[newIdx] = bundle.note;
       if (bundle.time !== undefined) newTimeSpent[newIdx] = bundle.time;
+      if (bundle.ai !== undefined) newAiAnalysis[newIdx] = bundle.ai;
     });
 
-    await recalculateAndSaveAttempt(selectedAttempt, newQuestions, newAnswers, newNotes, newTimeSpent);
+    await recalculateAndSaveAttempt(selectedAttempt, newQuestions, newAnswers, newNotes, newTimeSpent, newAiAnalysis);
   };
 
-  // Custom Order & Label Renamer for any Question inside Saved Mock
   const handleCustomOrderAndRenameQuestion = async (fromIdx) => {
     if (!selectedAttempt) return;
     const total = selectedAttempt.questions.length;
@@ -1049,7 +1344,6 @@ Return ONLY a valid JSON array of objects with these exact keys:
     await handleMoveQuestionInSavedMock(fromIdx, validTargetIdx, finalLabel);
   };
 
-  // Move or Rename Order of Saved Mock Sets in Vault
   const handleMoveAttemptInVault = async (fromIdx, toIdx, updatedTitle = null, updatedOrderLabel = null) => {
     const total = savedAttempts.length;
     if (toIdx < 0 || toIdx >= total) return;
@@ -1087,7 +1381,6 @@ Return ONLY a valid JSON array of objects with these exact keys:
     }
   };
 
-  // Custom Rename Order & Position of any Saved Mock Set
   const handleCustomRenameAndOrderMockSet = async (idx) => {
     const att = savedAttempts[idx];
     const total = savedAttempts.length;
@@ -1282,6 +1575,24 @@ Return ONLY a valid JSON array of objects with these exact keys:
     return Object.values(map).sort((a, b) => b.totalQs - a.totalQs);
   }, [savedAttempts]);
 
+  // All Starred / Bookmarked Questions across all saved mocks
+  const allStarredQuestions = useMemo(() => {
+    const list = [];
+    savedAttempts.forEach((att) => {
+      (att.questions || []).forEach((q, idx) => {
+        if (q.starred) {
+          list.push({
+            ...q,
+            sourceMockTitle: att.title,
+            userNote: att.notes?.[idx] || '',
+            aiExplanationNote: att.aiAnalysis?.[idx] || ''
+          });
+        }
+      });
+    });
+    return list;
+  }, [savedAttempts]);
+
   const allSubjectsList = useMemo(() => {
     const s = new Set(['All']);
     chapterWiseStats.forEach(item => s.add(item.subject));
@@ -1295,11 +1606,13 @@ Return ONLY a valid JSON array of objects with these exact keys:
     const neg = selectedAttempt.negativeMarks || 1;
 
     (selectedAttempt.questions || []).forEach((q, idx) => {
+      const sub = q.subject || selectedAttempt.primarySubject || 'General';
       const chap = q.chapter || 'General';
       const top = q.topic || 'Core Concept';
       const key = `${chap} — ${top}`;
       if (!map[key]) {
         map[key] = {
+          subject: sub,
           chapter: chap,
           topic: top,
           total: 0,
@@ -1307,7 +1620,8 @@ Return ONLY a valid JSON array of objects with these exact keys:
           wrong: 0,
           skipped: 0,
           marks: 0,
-          timeSec: 0
+          timeSec: 0,
+          sampleQ: q
         };
       }
       const ans = selectedAttempt.userAnswers?.[idx];
@@ -1656,7 +1970,134 @@ Return ONLY a valid JSON array of objects with these exact keys:
   }
 
   // ============================================================================
-  // REAL-EXAM CBT INTERFACE WHEN TEST IS RUNNING (With Back + हि/EN Language Switcher)
+  // PRE-TEST LAUNCH & INSTRUCTIONS SCREEN (Choose Real Exam Mode vs Option Elimination Mode BEFORE test starts!)
+  // ============================================================================
+  if (activeTab === 'pretest') {
+    const qCount = pendingQuestionsForLaunch.length || SAMPLE_QUESTIONS.length;
+    return (
+      <div className="min-h-screen bg-slate-950 text-slate-100 flex items-center justify-center p-4">
+        <div className="max-w-2xl w-full bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-6 shadow-2xl">
+          <div className="flex items-center justify-between border-b border-slate-800 pb-4">
+            <div>
+              <span className="px-2.5 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 text-xs font-bold">
+                Pre-Exam Instructions & Mode Setup
+              </span>
+              <h2 className="text-xl font-extrabold text-white mt-1.5">{mockTitle}</h2>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Total Questions: <b>{qCount} Qs</b> • Marking: <b className="text-emerald-400">+{positiveMarks}</b> / <b className="text-rose-400">-{negativeMarks}</b>
+              </p>
+            </div>
+            <button
+              onClick={handleGoBack}
+              className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-amber-300 text-xs font-bold flex items-center gap-1"
+            >
+              <ArrowLeft className="w-3.5 h-3.5" /> Back
+            </button>
+          </div>
+
+          {/* 1. Pre-Test Option 2 Selector: Real Exam Mode vs Option Elimination Mode */}
+          <div className="space-y-2.5">
+            <label className="block text-xs font-bold text-amber-400 uppercase tracking-wider">
+              1. Exam Interface Mode Chunein (Test Start Hone Se Pehle):
+            </label>
+            <div className="grid sm:grid-cols-2 gap-3">
+              <div
+                onClick={() => setAllowOptionElimination(false)}
+                className={`p-4 rounded-xl border cursor-pointer transition ${
+                  !allowOptionElimination
+                    ? 'bg-indigo-600/20 border-indigo-500 text-white'
+                    : 'bg-slate-950 border-slate-800 text-slate-400 hover:border-slate-700'
+                }`}
+              >
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-sm font-extrabold text-white">🏛️ Real Exam Mode (Default)</span>
+                  {!allowOptionElimination && <span className="text-xs px-2 py-0.5 rounded bg-indigo-600 text-white font-bold">Selected ✓</span>}
+                </div>
+                <p className="text-xs text-slate-300 leading-relaxed">
+                  Bilkul asli SSC/TCS CBT exam jaisa interface (Bina Option Cut/Strike-out button ke).
+                </p>
+              </div>
+
+              <div
+                onClick={() => setAllowOptionElimination(true)}
+                className={`p-4 rounded-xl border cursor-pointer transition ${
+                  allowOptionElimination
+                    ? 'bg-emerald-600/20 border-emerald-500 text-white'
+                    : 'bg-slate-950 border-slate-800 text-slate-400 hover:border-slate-700'
+                }`}
+              >
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-sm font-extrabold text-white">✂️ Option Elimination Mode</span>
+                  {allowOptionElimination && <span className="text-xs px-2 py-0.5 rounded bg-emerald-600 text-white font-bold">Selected ✓</span>}
+                </div>
+                <p className="text-xs text-slate-300 leading-relaxed">
+                  Practice ke waqt galat options ko 50-50 Strike-Out (`A̶.̶ ̶O̶p̶t̶i̶o̶n̶`) karne ke button ke sath.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* 2. Language & Timer Setup */}
+          <div className="grid sm:grid-cols-2 gap-4">
+            <div className="p-4 rounded-xl bg-slate-950 border border-slate-800">
+              <label className="block text-xs font-bold text-indigo-300 mb-2">
+                2. Default Test Language:
+              </label>
+              <div className="grid grid-cols-3 gap-1.5">
+                {[
+                  { id: 'hi', label: 'हिन्दी' },
+                  { id: 'en', label: 'English' },
+                  { id: 'bi', label: 'Both' }
+                ].map((l) => (
+                  <button
+                    key={l.id}
+                    type="button"
+                    onClick={() => setTestLang(l.id)}
+                    className={`py-2 rounded-lg text-xs font-bold transition ${
+                      testLang === l.id ? 'bg-indigo-600 text-white' : 'bg-slate-900 text-slate-400'
+                    }`}
+                  >
+                    {l.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="p-4 rounded-xl bg-slate-950 border border-slate-800">
+              <label className="block text-xs font-bold text-indigo-300 mb-2">
+                3. Test Duration (Minutes):
+              </label>
+              <input
+                type="number"
+                min={1}
+                value={durationMins}
+                onChange={(e) => setDurationMins(Number(e.target.value))}
+                className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-sm font-bold text-white"
+              />
+            </div>
+          </div>
+
+          {/* 3. Laptop Keyboard Shortcuts Info */}
+          <div className="p-3.5 rounded-xl bg-slate-950/90 border border-slate-800 text-xs text-slate-300 space-y-1">
+            <div className="font-bold text-amber-400">⌨️ Laptop Keyboard Shortcuts (Active During Test):</div>
+            <p>
+              Press <b>1, 2, 3, 4</b> to select Option A, B, C, D • Press <b>→ (Right Arrow)</b> for Save & Next • Press <b>← (Left Arrow)</b> for Previous • Press <b>M</b> to Mark for Review • Press <b>C</b> to Clear Response.
+            </p>
+          </div>
+
+          <button
+            onClick={confirmAndLaunchCbtExam}
+            className="w-full py-3.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-sm shadow-lg shadow-emerald-950/60 transition"
+          >
+            ▶ I am Ready to Begin — Start CBT Mock Test Now
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // ============================================================================
+  // REAL-EXAM CBT INTERFACE WHEN TEST IS RUNNING
   // ============================================================================
   if (activeTab === 'test' && activeQuestions.length > 0) {
     const tParts = getTimerParts(timeLeft);
@@ -1667,13 +2108,11 @@ Return ONLY a valid JSON array of objects with these exact keys:
 
     return (
       <div className="min-h-screen bg-[#f4f5f9] text-slate-900 flex flex-col select-none">
-        {/* 1. Top White Exam Header */}
         <header className="bg-white border-b border-slate-200 px-4 py-2.5 flex flex-wrap items-center justify-between gap-3 shadow-sm">
           <div className="flex items-center gap-2">
             <button
               onClick={handleGoBack}
               className="px-3 py-1.5 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold flex items-center gap-1 transition"
-              title="Go Back to Previous Screen"
             >
               <ArrowLeft className="w-3.5 h-3.5" /> Back
             </button>
@@ -1731,7 +2170,6 @@ Return ONLY a valid JSON array of objects with these exact keys:
           </div>
         </header>
 
-        {/* 2. Sub-Header Action Bar */}
         <div className="bg-white border-b border-slate-200 px-4 py-2 flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2">
             <span className="px-4 py-1.5 rounded-md bg-[#0a7c2f] text-white text-xs font-bold shadow-sm">
@@ -1776,7 +2214,6 @@ Return ONLY a valid JSON array of objects with these exact keys:
             </button>
           </div>
 
-          {/* Language Selector Dropdown in Sub-Header */}
           <div className="flex items-center gap-2">
             <span className="text-xs font-bold text-slate-600 flex items-center gap-1">
               <Globe className="w-3.5 h-3.5 text-[#2e2a85]" /> Language:
@@ -1793,7 +2230,6 @@ Return ONLY a valid JSON array of objects with these exact keys:
           </div>
         </div>
 
-        {/* 3. Main CBT Split Area */}
         <div className="flex-1 flex flex-col lg:flex-row overflow-hidden">
           <div className="flex-1 p-4 md:p-6 overflow-y-auto relative">
             <div className="flex items-center justify-between mb-3">
@@ -1810,17 +2246,11 @@ Return ONLY a valid JSON array of objects with these exact keys:
               className="bg-white border border-slate-200 rounded-2xl p-5 md:p-7 shadow-sm transition-all"
               style={{ fontSize: `${zoomScale}%` }}
             >
-              {/* Question Top Metadata Row (Includes exact हि ⌄ Language Switcher like real SSC CBT) */}
               <div className="flex flex-wrap items-center justify-between gap-2 pb-4 mb-5 border-b border-slate-100">
                 <div className="flex items-center gap-2">
                   <span className="text-sm font-extrabold text-slate-900">
                     Question No. {currentIdx + 1}
                   </span>
-                  {currQ.customLabel && currQ.customLabel !== `Q.${currentIdx + 1}` && (
-                    <span className="px-2 py-0.5 rounded bg-amber-100 text-amber-900 text-xs font-bold">
-                      {currQ.customLabel}
-                    </span>
-                  )}
                   {currQ.topic && (
                     <span className="px-2.5 py-0.5 rounded-full bg-indigo-50 text-[#2e2a85] text-[11px] font-semibold">
                       {currQ.topic}
@@ -1837,21 +2267,31 @@ Return ONLY a valid JSON array of objects with these exact keys:
                     +{positiveMarks} / -{negativeMarks}
                   </span>
 
-                  {/* Real CBT Style Language Pill (हि ⌄ / EN ⌄) */}
                   <select
                     value={testLang}
                     onChange={(e) => setTestLang(e.target.value)}
-                    title="Change Question Language (Hindi / English)"
                     className="px-2.5 py-1 rounded-full bg-slate-100 hover:bg-slate-200 border border-slate-300 text-slate-800 text-xs font-extrabold cursor-pointer"
                   >
                     <option value="hi">हि ⌄</option>
                     <option value="en">EN ⌄</option>
                     <option value="bi">हि+EN</option>
                   </select>
+
+                  {/* Bookmark / Star Question Button in CBT */}
+                  <button
+                    onClick={() => toggleStarInActiveTest(currentIdx)}
+                    title="Star / Bookmark this Question for Revision"
+                    className={`px-2.5 py-1 rounded-full text-xs font-bold border transition ${
+                      currQ.starred
+                        ? 'bg-amber-400 text-slate-950 border-amber-500'
+                        : 'bg-slate-100 text-slate-600 border-slate-300 hover:bg-slate-200'
+                    }`}
+                  >
+                    {currQ.starred ? '★ Starred' : '☆ Star'}
+                  </button>
                 </div>
               </div>
 
-              {/* Dedicated Cloze Test / RC Passage Box */}
               {localizedPassage && (
                 <div className="mb-5 p-4 rounded-xl bg-slate-50 border border-indigo-200 max-h-60 overflow-y-auto">
                   <div className="text-xs font-extrabold text-[#2e2a85] mb-1.5 flex items-center gap-1.5">
@@ -1864,43 +2304,65 @@ Return ONLY a valid JSON array of objects with these exact keys:
                 </div>
               )}
 
-              {/* Question Statement */}
               <div className="text-slate-900 font-medium leading-relaxed mb-6 whitespace-pre-line">
                 {localizedQuestion}
               </div>
 
-              {/* Radio Options List */}
               <div className="space-y-2.5">
                 {currQ.options.map((_, oIdx) => {
                   const selected = userAnswers[currentIdx] === oIdx;
+                  const isStruck = !!eliminatedOptions[currentIdx]?.[oIdx];
                   const optText = getLocalizedOptionText(currQ, oIdx, testLang);
                   return (
                     <div
                       key={oIdx}
-                      onClick={() => setUserAnswers({ ...userAnswers, [currentIdx]: oIdx })}
-                      className={`p-3.5 rounded-xl border cursor-pointer transition flex items-center gap-3.5 ${
+                      onClick={() => {
+                        if (!isStruck) {
+                          setUserAnswers({ ...userAnswers, [currentIdx]: oIdx });
+                        }
+                      }}
+                      className={`p-3.5 rounded-xl border cursor-pointer transition flex items-center justify-between gap-3 ${
                         selected
                           ? 'bg-indigo-50/80 border-[#2e2a85] text-slate-950 font-semibold shadow-sm'
+                          : isStruck
+                          ? 'bg-slate-100 border-slate-200 text-slate-400 line-through opacity-60'
                           : 'bg-white hover:bg-slate-50 border-slate-200 text-slate-800'
                       }`}
                     >
-                      <span
-                        className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 ${
-                          selected ? 'border-[#2e2a85]' : 'border-slate-500'
-                        }`}
-                      >
-                        {selected && <span className="w-2.5 h-2.5 rounded-full bg-[#2e2a85]" />}
-                      </span>
-                      <span className="text-xs font-bold text-[#2e2a85] w-4">
-                        {String.fromCharCode(65 + oIdx)}.
-                      </span>
-                      <span className="flex-1">{optText}</span>
+                      <div className="flex items-center gap-3.5 flex-1">
+                        <span
+                          className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 ${
+                            selected ? 'border-[#2e2a85]' : 'border-slate-500'
+                          }`}
+                        >
+                          {selected && <span className="w-2.5 h-2.5 rounded-full bg-[#2e2a85]" />}
+                        </span>
+                        <span className="text-xs font-bold text-[#2e2a85] w-4">
+                          {String.fromCharCode(65 + oIdx)}.
+                        </span>
+                        <span className="flex-1">{optText}</span>
+                      </div>
+
+                      {/* Option 2 Strike-Out Button (Visible ONLY if user enabled Option Elimination before test!) */}
+                      {allowOptionElimination && (
+                        <button
+                          type="button"
+                          onClick={(e) => toggleOptionStrikeOut(currentIdx, oIdx, e)}
+                          className={`px-2 py-0.5 rounded text-[11px] font-bold border transition shrink-0 ${
+                            isStruck
+                              ? 'bg-slate-700 text-white border-slate-800'
+                              : 'bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100'
+                          }`}
+                          title="50-50 Eliminate / Strike-out Option"
+                        >
+                          {isStruck ? 'Undo' : '✂️ Cut'}
+                        </button>
+                      )}
                     </div>
                   );
                 })}
               </div>
 
-              {/* Bottom Navigation & Clear inside Card */}
               <div className="flex flex-wrap items-center justify-between gap-3 pt-6 mt-6 border-t border-slate-100">
                 <button
                   onClick={() => {
@@ -1941,13 +2403,12 @@ Return ONLY a valid JSON array of objects with these exact keys:
             </div>
           </div>
 
-          {/* Right Sidebar: Question Palette + Analysis Counts */}
           {sidebarOpen && (
             <aside className="w-full lg:w-80 bg-white border-t lg:border-t-0 lg:border-l border-slate-200 flex flex-col justify-between shrink-0">
               <div>
-                <div className="px-4 py-2.5 border-b border-slate-200 flex items-center gap-4 text-xs font-bold text-orange-500">
-                  <span>Symbols</span>
-                  <span>Instructions</span>
+                <div className="px-4 py-2.5 border-b border-slate-200 flex items-center justify-between text-xs font-bold text-orange-500">
+                  <span>Symbols & Palette</span>
+                  <span className="text-[11px] text-slate-500">Keys: 1-4, ←/→, M</span>
                 </div>
 
                 <div className="p-4">
@@ -1956,7 +2417,7 @@ Return ONLY a valid JSON array of objects with these exact keys:
                   </h3>
 
                   <div className="grid grid-cols-5 gap-2.5 max-h-64 overflow-y-auto p-1">
-                    {activeQuestions.map((_, i) => {
+                    {activeQuestions.map((qItem, i) => {
                       const hasAns = userAnswers[i] !== undefined;
                       const isMark = !!markedForReview[i];
                       const isCurr = currentIdx === i;
@@ -1974,11 +2435,14 @@ Return ONLY a valid JSON array of objects with these exact keys:
                         <button
                           key={i}
                           onClick={() => navigateToQuestion(i)}
-                          className={`h-8 rounded-full text-xs font-bold transition flex items-center justify-center ${pillStyle} ${
+                          className={`h-8 rounded-full text-xs font-bold transition flex items-center justify-center relative ${pillStyle} ${
                             isCurr ? 'ring-2 ring-offset-2 ring-[#2e2a85]' : ''
                           }`}
                         >
                           {String(i + 1).padStart(2, '0')}
+                          {qItem.starred && (
+                            <span className="absolute -top-1 -right-1 text-[10px] text-amber-300">★</span>
+                          )}
                         </button>
                       );
                     })}
@@ -2031,7 +2495,6 @@ Return ONLY a valid JSON array of objects with these exact keys:
     );
   }
 
-  // Overall Stats for the Home Dashboard
   const totalSavedQs = savedAttempts.reduce((acc, a) => acc + (a.questions?.length || 0), 0);
   const totalCorrectAll = savedAttempts.reduce((acc, a) => acc + (a.correct || 0), 0);
   const totalAttemptedAll = savedAttempts.reduce((acc, a) => acc + (a.correct || 0) + (a.wrong || 0), 0);
@@ -2039,16 +2502,13 @@ Return ONLY a valid JSON array of objects with these exact keys:
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col">
-      {/* Main Top Navigation Header with Smart Back Button + Home Tab */}
-      <header className="border-b border-slate-800 bg-slate-900/80 backdrop-blur sticky top-0 z-30">
+      <header className="border-b border-slate-800 bg-slate-900/80 backdrop-blur sticky top-0 z-30 print:hidden">
         <div className="max-w-7xl mx-auto px-4 py-3 flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2.5">
-            {/* Step-by-Step Smart Back Button */}
             {(navStack.length > 0 || activeTab !== 'home') && (
               <button
                 onClick={handleGoBack}
                 className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-amber-300 text-xs font-bold flex items-center gap-1 border border-slate-700 transition"
-                title="Pichle page par wapas jayein"
               >
                 <ArrowLeft className="w-3.5 h-3.5" /> Back
               </button>
@@ -2102,17 +2562,15 @@ Return ONLY a valid JSON array of objects with these exact keys:
               }`}
             >
               <FolderKanban className="w-3.5 h-3.5" />
-              AI Chapter & Topic Vault ({savedAttempts.length})
+              AI Chapter Vault ({savedAttempts.length})
             </button>
 
-            {/* Global Language Switcher in Header */}
             <div className="flex items-center bg-slate-800 rounded-xl px-2 py-1 border border-slate-700">
               <Globe className="w-3.5 h-3.5 text-indigo-400 mr-1" />
               <select
                 value={testLang}
                 onChange={(e) => setTestLang(e.target.value)}
                 className="bg-transparent text-xs font-bold text-white focus:outline-none cursor-pointer"
-                title="Select Default Test & Revision Language"
               >
                 <option value="hi" className="bg-slate-900">हिन्दी (HI)</option>
                 <option value="en" className="bg-slate-900">English (EN)</option>
@@ -2122,7 +2580,6 @@ Return ONLY a valid JSON array of objects with these exact keys:
 
             <button
               onClick={() => user && syncAndLoadUserAttempts(user)}
-              title="Sync Laptop & Mobile Data"
               className="px-2.5 py-1.5 rounded-xl text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-emerald-300 flex items-center gap-1"
             >
               <RefreshCw className="w-3.5 h-3.5" /> Sync
@@ -2144,6 +2601,63 @@ Return ONLY a valid JSON array of objects with these exact keys:
           </div>
         </div>
       </header>
+
+      {/* AI Topic Master Revision Modal */}
+      {topicRevisionModalData && (
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50">
+          <div className="bg-slate-900 border border-indigo-500/40 rounded-2xl max-w-3xl w-full max-h-[88vh] flex flex-col shadow-2xl">
+            <div className="p-4 border-b border-slate-800 flex items-center justify-between gap-2">
+              <div>
+                <span className="px-2.5 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 text-[11px] font-bold">
+                  📖 AI Topic Master Revision Capsule
+                </span>
+                <h3 className="text-base font-extrabold text-white mt-1">
+                  {topicRevisionModalData.subject} → {topicRevisionModalData.chapter} ({topicRevisionModalData.topic})
+                </h3>
+              </div>
+              <div className="flex items-center gap-2">
+                {!topicRevisionLoading && (
+                  <button
+                    onClick={() =>
+                      handleReviseChapterTopicWithAI(
+                        topicRevisionModalData.subject,
+                        topicRevisionModalData.chapter,
+                        topicRevisionModalData.topic,
+                        null,
+                        true
+                      )
+                    }
+                    className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-amber-300 text-xs font-semibold"
+                  >
+                    ↻ Regenerate Notes
+                  </button>
+                )}
+                <button
+                  onClick={() => setTopicRevisionModalData(null)}
+                  className="px-3 py-1.5 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 text-xs font-bold"
+                >
+                  ✕ Close
+                </button>
+              </div>
+            </div>
+
+            <div className="p-5 overflow-y-auto flex-1">
+              {topicRevisionLoading ? (
+                <div className="py-16 text-center space-y-3">
+                  <Sparkles className="w-8 h-8 text-indigo-400 animate-spin mx-auto" />
+                  <p className="text-sm font-bold text-white">
+                    AI Professor "{topicRevisionModalData.chapter} ({topicRevisionModalData.topic})" ke Complete Revision Notes, Formulas aur Exam Traps taiyar kar raha hai...
+                  </p>
+                </div>
+              ) : (
+                <div className="text-xs md:text-sm text-slate-200 whitespace-pre-line leading-relaxed bg-slate-950 p-4 rounded-xl border border-slate-800">
+                  {topicRevisionModalData.content}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {showKeyModal && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50">
@@ -2203,7 +2717,7 @@ Return ONLY a valid JSON array of objects with these exact keys:
                   Welcome back, {user.displayName || 'Rohit'}!
                 </h2>
                 <p className="text-xs text-slate-300 mt-1">
-                  Yahan se aap naya PDF Mock bana sakte hain, Hindi/English me test de sakte hain, ya apne Saved Mocks ka Order set kar sakte hain.
+                  Har question me "Ask AI (Kyun Galat Hua)" aur "Revise Topic with AI" ke sath aapka complete Revision Hub.
                 </p>
               </div>
               <div className="flex flex-wrap gap-2.5">
@@ -2219,19 +2733,20 @@ Return ONLY a valid JSON array of objects with these exact keys:
                 >
                   📚 Open AI Chapter Vault
                 </button>
-                <button
-                  onClick={() => {
-                    setMockTitle('Bilingual Hindi & English Demo Mock');
-                    startMockWithQuestions(SAMPLE_QUESTIONS);
-                  }}
-                  className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-amber-300 text-xs font-bold border border-slate-700"
-                >
-                  ▶ Try Hindi/English Demo Test
-                </button>
+                {allStarredQuestions.length > 0 && (
+                  <button
+                    onClick={() => {
+                      setMockTitle(`★ Starred Tough Questions Mock (${allStarredQuestions.length} Qs)`);
+                      startMockWithQuestions(allStarredQuestions);
+                    }}
+                    className="px-4 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-extrabold shadow-lg"
+                  >
+                    ★ Practice Starred Qs ({allStarredQuestions.length})
+                  </button>
+                )}
               </div>
             </div>
 
-            {/* Quick Summary Cards */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4">
                 <div className="text-xs text-slate-400">Total Saved Mocks</div>
@@ -2248,16 +2763,55 @@ Return ONLY a valid JSON array of objects with these exact keys:
                 <div className="text-2xl font-extrabold text-amber-400 mt-1">{overallAccuracy}%</div>
                 <div className="text-[11px] text-slate-400 mt-1">{totalCorrectAll} Correct Answers</div>
               </div>
-              <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4">
-                <div className="text-xs text-slate-400">Current Test Language</div>
-                <div className="text-lg font-extrabold text-indigo-300 mt-1">
-                  {testLang === 'hi' ? 'हिन्दी (Hindi)' : testLang === 'en' ? 'English' : 'Bilingual (Both)'}
-                </div>
-                <div className="text-[11px] text-slate-400 mt-1">Switch anytime in 1-click</div>
+              <div
+                onClick={() => navigateScreen('vault', { vaultViewMode: 'starred' })}
+                className="bg-slate-900 border border-amber-500/30 rounded-2xl p-4 cursor-pointer hover:border-amber-400 transition"
+              >
+                <div className="text-xs text-amber-300 font-semibold">★ Starred Tough Qs</div>
+                <div className="text-2xl font-extrabold text-amber-400 mt-1">{allStarredQuestions.length}</div>
+                <div className="text-[11px] text-slate-400 mt-1">Click to Revise Starred Bank →</div>
               </div>
             </div>
 
-            {/* Recent Mocks List on Home */}
+            {/* Score Trend Visual Bar Chart on Home */}
+            {savedAttempts.length > 0 && (
+              <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-3">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                    <BarChart3 className="w-4 h-4 text-emerald-400" />
+                    <span>📈 Recent Mock Score % Trend (Target: 80%+ Accuracy)</span>
+                  </h3>
+                  <span className="text-xs text-slate-400">Last {Math.min(8, savedAttempts.length)} Mocks</span>
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-8 gap-2.5 pt-1">
+                  {savedAttempts.slice(0, 8).map((att, i) => {
+                    const pct = att.maxScore > 0 ? Math.max(0, Math.round((att.totalScore / att.maxScore) * 100)) : 0;
+                    return (
+                      <div
+                        key={i}
+                        onClick={() => navigateScreen('review', { selectedAttempt: att, filterMode: 'all' })}
+                        className="p-2.5 rounded-xl bg-slate-950 border border-slate-800 hover:border-indigo-500 cursor-pointer flex flex-col justify-between"
+                      >
+                        <div className="text-[10px] text-slate-400 truncate">{att.title}</div>
+                        <div className="my-2 h-16 bg-slate-900 rounded-lg flex items-end p-1 overflow-hidden">
+                          <div
+                            className={`w-full rounded ${
+                              pct >= 75 ? 'bg-emerald-500' : pct >= 50 ? 'bg-amber-500' : 'bg-rose-500'
+                            }`}
+                            style={{ height: `${Math.max(12, pct)}%` }}
+                          />
+                        </div>
+                        <div className="flex items-center justify-between text-[11px] font-bold">
+                          <span className="text-white">{att.totalScore}/{att.maxScore}</span>
+                          <span className="text-indigo-400">{pct}%</span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
             <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-4">
               <div className="flex items-center justify-between">
                 <h3 className="text-base font-bold text-white">Your Ordered Mock Tests (Quick Access)</h3>
@@ -2397,7 +2951,7 @@ Return ONLY a valid JSON array of objects with these exact keys:
             </div>
 
             <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-3.5">
-              <h2 className="text-lg font-bold text-white">2. Custom Mock & Language Settings</h2>
+              <h2 className="text-lg font-bold text-white">2. Custom Mock & Pre-Test Settings</h2>
               <div>
                 <label className="block text-xs text-slate-400 mb-1">Mock Test Name</label>
                 <input
@@ -2408,7 +2962,33 @@ Return ONLY a valid JSON array of objects with these exact keys:
                 />
               </div>
 
-              {/* Test Medium / Language Selector */}
+              {/* Pre-Test Option Elimination Selector right inside Settings as well */}
+              <div className="p-3 rounded-xl bg-slate-950 border border-amber-500/30 space-y-1.5">
+                <label className="block text-xs font-bold text-amber-300">
+                  ✂️ Option 2: 50-50 Option Elimination (Before Test):
+                </label>
+                <div className="grid grid-cols-2 gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => setAllowOptionElimination(false)}
+                    className={`py-1.5 px-2 rounded-lg text-[11px] font-bold transition ${
+                      !allowOptionElimination ? 'bg-indigo-600 text-white' : 'bg-slate-900 text-slate-400'
+                    }`}
+                  >
+                    OFF (Real Exam)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAllowOptionElimination(true)}
+                    className={`py-1.5 px-2 rounded-lg text-[11px] font-bold transition ${
+                      allowOptionElimination ? 'bg-emerald-600 text-white' : 'bg-slate-900 text-slate-400'
+                    }`}
+                  >
+                    ON (With Strike-Out)
+                  </button>
+                </div>
+              </div>
+
               <div className="p-3 rounded-xl bg-indigo-950/30 border border-indigo-500/30">
                 <label className="block text-xs font-bold text-indigo-300 mb-1.5 flex items-center gap-1.5">
                   <Globe className="w-3.5 h-3.5" />
@@ -2536,7 +3116,7 @@ Return ONLY a valid JSON array of objects with these exact keys:
         )}
 
         {/* ==================================================================== */}
-        {/* AI CHAPTER & TOPIC VAULT TAB                                         */}
+        {/* AI CHAPTER, TOPIC & STARRED VAULT TAB                                */}
         {/* ==================================================================== */}
         {activeTab === 'vault' && (
           <div className="space-y-5">
@@ -2544,10 +3124,10 @@ Return ONLY a valid JSON array of objects with these exact keys:
               <div>
                 <h2 className="text-lg font-bold text-white flex items-center gap-2">
                   <Layers className="w-5 h-5 text-indigo-400" />
-                  <span>AI Automatic Chapter-Wise & Custom Order Vault</span>
+                  <span>AI Automatic Chapter-Wise, Topic Revision & Order Vault</span>
                 </h2>
                 <p className="text-xs text-slate-400">
-                  "Set Order / Rename" button se aap kisi bhi Mock Set ya Question ka Order Number aur Naam apne hisab se set kar sakte hain.
+                  Har Chapter ke andar "📖 Revise Chapter with AI" daba kar uske saare formulas aur concepts padhein taaki dubara galti na ho.
                 </p>
               </div>
               <div className="flex flex-wrap gap-2">
@@ -2557,7 +3137,7 @@ Return ONLY a valid JSON array of objects with these exact keys:
                     vaultViewMode === 'chapters' ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-slate-300'
                   }`}
                 >
-                  📚 Chapter & Topic Wise View
+                  📚 Chapter & Topic View
                 </button>
                 <button
                   onClick={() => navigateScreen('vault', { vaultViewMode: 'tests' })}
@@ -2566,6 +3146,14 @@ Return ONLY a valid JSON array of objects with these exact keys:
                   }`}
                 >
                   📝 All Mock Tests ({savedAttempts.length})
+                </button>
+                <button
+                  onClick={() => navigateScreen('vault', { vaultViewMode: 'starred' })}
+                  className={`px-3 py-2 rounded-xl text-xs font-semibold transition ${
+                    vaultViewMode === 'starred' ? 'bg-amber-500 text-slate-950 font-bold' : 'bg-slate-800 text-amber-300'
+                  }`}
+                >
+                  ★ Starred Qs ({allStarredQuestions.length})
                 </button>
                 <button
                   onClick={exportBackupJSON}
@@ -2580,7 +3168,7 @@ Return ONLY a valid JSON array of objects with these exact keys:
               </div>
             </div>
 
-            {allSubjectsList.length > 1 && (
+            {allSubjectsList.length > 1 && vaultViewMode !== 'starred' && (
               <div className="flex flex-wrap items-center gap-2">
                 <span className="text-xs text-slate-400 flex items-center gap-1 mr-1">
                   <Filter className="w-3.5 h-3.5 text-indigo-400" /> Filter Subject:
@@ -2605,6 +3193,58 @@ Return ONLY a valid JSON array of objects with these exact keys:
               <div className="bg-slate-900 border border-slate-800 rounded-2xl p-10 text-center text-slate-400">
                 Abhi tak koi mock test save nahi hua hai. "+ Create Mock" me jakar apna pehla test dein!
               </div>
+            ) : vaultViewMode === 'starred' ? (
+              <div className="space-y-4">
+                <div className="bg-slate-900 border border-amber-500/30 rounded-2xl p-4 flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <h3 className="text-base font-bold text-amber-300">★ Your Starred / Bookmarked Tough Questions ({allStarredQuestions.length})</h3>
+                    <p className="text-xs text-slate-400">Sabhi mocks me se aapke chune hue sabse important questions ek jagah.</p>
+                  </div>
+                  {allStarredQuestions.length > 0 && (
+                    <button
+                      onClick={() => {
+                        setMockTitle(`★ Starred Tough Questions Mock (${allStarredQuestions.length} Qs)`);
+                        startMockWithQuestions(allStarredQuestions);
+                      }}
+                      className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-extrabold"
+                    >
+                      ▶ Start Mock of All Starred Questions
+                    </button>
+                  )}
+                </div>
+
+                {allStarredQuestions.length === 0 ? (
+                  <div className="bg-slate-900 border border-slate-800 rounded-2xl p-8 text-center text-slate-400 text-xs">
+                    Abhi koi question Star nahi kiya gaya hai. Test ya Result ke waqt kisi bhi question par "☆ Star" button dabayein!
+                  </div>
+                ) : (
+                  allStarredQuestions.map((sq, sIdx) => (
+                    <div key={sIdx} className="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-3">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          <span className="px-2.5 py-0.5 rounded bg-amber-400 text-slate-950 text-xs font-extrabold">
+                            ★ Starred #{sIdx + 1}
+                          </span>
+                          <span className="text-xs text-indigo-400 font-semibold">{sq.subject} • {sq.chapter} ({sq.topic})</span>
+                        </div>
+                        <button
+                          onClick={() => handleReviseChapterTopicWithAI(sq.subject || 'General', sq.chapter || 'General', sq.topic || 'Concept', sq)}
+                          className="px-3 py-1 rounded-lg bg-indigo-600/20 hover:bg-indigo-600 text-indigo-300 hover:text-white text-xs font-bold transition"
+                        >
+                          📖 Revise This Topic with AI
+                        </button>
+                      </div>
+                      <p className="text-sm text-white whitespace-pre-line">{getLocalizedQuestionText(sq, testLang)}</p>
+                      <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 text-xs text-emerald-300">
+                        <b>Correct Answer:</b> {String.fromCharCode(65 + (sq.correctIndex || 0))}. {getLocalizedOptionText(sq, sq.correctIndex || 0, testLang)}
+                      </div>
+                      <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 text-xs text-slate-300 whitespace-pre-line">
+                        <strong className="text-indigo-400">Solution: </strong>{getLocalizedExplanationText(sq, testLang)}
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
             ) : vaultViewMode === 'chapters' ? (
               <div className="grid md:grid-cols-2 gap-4">
                 {chapterWiseStats
@@ -2627,7 +3267,7 @@ Return ONLY a valid JSON array of objects with these exact keys:
                                 onClick={() => handleRenameChapterGroup(chapItem.subject, chapItem.chapter)}
                                 className="px-2 py-0.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-amber-300 text-[11px] flex items-center gap-1"
                               >
-                                <Edit3 className="w-3 h-3" /> Rename Chapter
+                                <Edit3 className="w-3 h-3" /> Rename
                               </button>
                               <span className={`text-xs font-bold px-2.5 py-0.5 rounded-full ${
                                 accuracy >= 75 ? 'bg-emerald-500/20 text-emerald-300' : accuracy >= 50 ? 'bg-amber-500/20 text-amber-300' : 'bg-rose-500/20 text-rose-300'
@@ -2637,9 +3277,17 @@ Return ONLY a valid JSON array of objects with these exact keys:
                             </div>
                           </div>
 
-                          <h3 className="text-base font-bold text-white mt-2">
-                            Chapter: {chapItem.chapter}
-                          </h3>
+                          <div className="flex items-center justify-between gap-2 mt-2">
+                            <h3 className="text-base font-bold text-white">
+                              Chapter: {chapItem.chapter}
+                            </h3>
+                            <button
+                              onClick={() => handleReviseChapterTopicWithAI(chapItem.subject, chapItem.chapter, 'Complete Chapter Concept & Formulas')}
+                              className="px-2.5 py-1 rounded-lg bg-emerald-600/20 hover:bg-emerald-600 text-emerald-300 hover:text-white text-[11px] font-bold transition"
+                            >
+                              📖 Revise Chapter (AI Notes)
+                            </button>
+                          </div>
 
                           <div className="grid grid-cols-4 gap-2 mt-3 text-center">
                             <div className="p-2 rounded-xl bg-slate-950 border border-slate-800">
@@ -2673,9 +3321,16 @@ Return ONLY a valid JSON array of objects with these exact keys:
                                   <span className="text-slate-200 font-medium truncate pr-2">
                                     • {tObj.topic}
                                   </span>
-                                  <div className="flex items-center gap-2 shrink-0">
+                                  <div className="flex items-center gap-1.5 shrink-0">
                                     <span className="text-emerald-400">{tObj.correct}✓</span>
                                     <span className="text-rose-400">{tObj.wrong}✗</span>
+                                    <button
+                                      onClick={() => handleReviseChapterTopicWithAI(chapItem.subject, chapItem.chapter, tObj.topic, tObj.questions?.[0])}
+                                      className="px-2 py-0.5 rounded bg-emerald-600/30 hover:bg-emerald-600 text-emerald-200 text-[10px] font-semibold"
+                                      title="Revise this Topic so you never make a mistake again"
+                                    >
+                                      📖 Revise
+                                    </button>
                                     <button
                                       onClick={() => {
                                         setMockTitle(`${chapItem.chapter} - ${tObj.topic}`);
@@ -2683,7 +3338,7 @@ Return ONLY a valid JSON array of objects with these exact keys:
                                       }}
                                       className="px-2 py-0.5 rounded bg-indigo-600/30 hover:bg-indigo-600 text-indigo-200 text-[10px] font-semibold"
                                     >
-                                      Practice Topic
+                                      Practice
                                     </button>
                                   </div>
                                 </div>
@@ -2739,7 +3394,6 @@ Return ONLY a valid JSON array of objects with these exact keys:
                             <button
                               onClick={() => handleCustomRenameAndOrderMockSet(idx)}
                               className="px-2.5 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500 text-amber-300 hover:text-slate-950 text-xs font-bold flex items-center gap-1 transition"
-                              title="Apne hisab se Order Number ya Mock Name set karein"
                             >
                               <Hash className="w-3 h-3" /> Set Order / Rename
                             </button>
@@ -2747,7 +3401,6 @@ Return ONLY a valid JSON array of objects with these exact keys:
                               disabled={idx === 0}
                               onClick={() => handleMoveAttemptInVault(idx, idx - 1)}
                               className="p-1 rounded bg-slate-800 hover:bg-slate-700 disabled:opacity-30 text-slate-300"
-                              title="Move Mock Up"
                             >
                               <ArrowUp className="w-3.5 h-3.5" />
                             </button>
@@ -2755,14 +3408,12 @@ Return ONLY a valid JSON array of objects with these exact keys:
                               disabled={idx === savedAttempts.length - 1}
                               onClick={() => handleMoveAttemptInVault(idx, idx + 1)}
                               className="p-1 rounded bg-slate-800 hover:bg-slate-700 disabled:opacity-30 text-slate-300"
-                              title="Move Mock Down"
                             >
                               <ArrowDown className="w-3.5 h-3.5" />
                             </button>
                             <button
                               onClick={() => handleDeleteAttempt(att)}
                               className="p-1 rounded bg-slate-800 hover:bg-rose-500/20 text-slate-400 hover:text-rose-400"
-                              title="Delete Mock Test"
                             >
                               <Trash2 className="w-3.5 h-3.5" />
                             </button>
@@ -2797,7 +3448,7 @@ Return ONLY a valid JSON array of objects with these exact keys:
                           onClick={() => navigateScreen('review', { selectedAttempt: att, filterMode: 'all' })}
                           className="flex-1 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold"
                         >
-                          Detailed Result & Order Questions
+                          Detailed Result & Ask AI
                         </button>
                         <button
                           onClick={() => {
@@ -2831,7 +3482,7 @@ Return ONLY a valid JSON array of objects with these exact keys:
         )}
 
         {/* ==================================================================== */}
-        {/* DETAILED RESULT SCORECARD + CUSTOM QUESTION ORDER & LANGUAGE TOGGLE  */}
+        {/* DETAILED RESULT SCORECARD + ASK AI WHY WRONG + REVISE CHAPTER/TOPIC  */}
         {/* ==================================================================== */}
         {activeTab === 'review' && selectedAttempt && (() => {
           const totalQs = selectedAttempt.questions?.length || 1;
@@ -2847,19 +3498,18 @@ Return ONLY a valid JSON array of objects with these exact keys:
 
           return (
             <div className="space-y-6">
-              {/* 1. Executive Result & Analytics Scorecard */}
               <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-5 shadow-xl">
                 <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-800 pb-4">
                   <div>
                     <div className="flex items-center gap-2">
                       <button
                         onClick={handleGoBack}
-                        className="px-3 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-amber-300 text-xs font-bold flex items-center gap-1"
+                        className="px-3 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-amber-300 text-xs font-bold flex items-center gap-1 print:hidden"
                       >
                         <ArrowLeft className="w-3.5 h-3.5" /> Back
                       </button>
                       <span className="px-2.5 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 text-xs font-semibold">
-                        Official Detailed Result & Performance Report
+                        Official Detailed Result & AI Coach Report
                       </span>
                     </div>
                     <h2 className="text-xl font-extrabold text-white mt-2">
@@ -2870,8 +3520,7 @@ Return ONLY a valid JSON array of objects with these exact keys:
                     </p>
                   </div>
 
-                  <div className="flex flex-wrap items-center gap-2">
-                    {/* Revision Sheet Language Switcher */}
+                  <div className="flex flex-wrap items-center gap-2 print:hidden">
                     <div className="flex items-center gap-1 bg-slate-950 border border-slate-800 rounded-xl p-1">
                       {[
                         { id: 'hi', label: 'हिन्दी' },
@@ -2891,13 +3540,20 @@ Return ONLY a valid JSON array of objects with these exact keys:
                     </div>
 
                     <button
+                      onClick={() => window.print()}
+                      className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-amber-300 text-xs font-bold"
+                    >
+                      🖨️ Print Result / Notes
+                    </button>
+
+                    <button
                       onClick={() => {
                         setMockTitle(selectedAttempt.title);
                         startMockWithQuestions(selectedAttempt.questions);
                       }}
                       className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold"
                     >
-                      ▶ Re-Attempt This Mock (In Current Order)
+                      ▶ Re-Attempt This Mock
                     </button>
                   </div>
                 </div>
@@ -2989,10 +3645,11 @@ Return ONLY a valid JSON array of objects with these exact keys:
                   </div>
                 </div>
 
+                {/* Topic Breakdown Table with Direct "Revise Topic with AI" Button */}
                 {selectedAttemptTopicBreakdown.length > 0 && (
                   <div className="pt-2">
                     <h3 className="text-xs font-bold text-indigo-300 uppercase tracking-wider mb-2.5">
-                      📊 Topic-Wise Performance Breakdown in This Mock
+                      📊 Topic-Wise Performance & Instant AI Topic Revision
                     </h3>
                     <div className="overflow-x-auto rounded-xl border border-slate-800">
                       <table className="w-full text-left text-xs">
@@ -3002,9 +3659,8 @@ Return ONLY a valid JSON array of objects with these exact keys:
                             <th className="py-2.5 px-3 text-center">Total Qs</th>
                             <th className="py-2.5 px-3 text-center text-emerald-400">Correct</th>
                             <th className="py-2.5 px-3 text-center text-rose-400">Wrong</th>
-                            <th className="py-2.5 px-3 text-center">Skipped</th>
                             <th className="py-2.5 px-3 text-center">Accuracy</th>
-                            <th className="py-2.5 px-3 text-right">Net Marks</th>
+                            <th className="py-2.5 px-3 text-right">Master This Topic</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-800/70 bg-slate-900/50">
@@ -3019,10 +3675,14 @@ Return ONLY a valid JSON array of objects with these exact keys:
                                 <td className="py-2 px-3 text-center">{row.total}</td>
                                 <td className="py-2 px-3 text-center text-emerald-300 font-bold">{row.correct}</td>
                                 <td className="py-2 px-3 text-center text-rose-300 font-bold">{row.wrong}</td>
-                                <td className="py-2 px-3 text-center text-slate-400">{row.skipped}</td>
                                 <td className="py-2 px-3 text-center font-bold">{rowAcc}%</td>
-                                <td className="py-2 px-3 text-right font-bold text-indigo-300">
-                                  {Number(row.marks.toFixed(2))}
+                                <td className="py-2 px-3 text-right">
+                                  <button
+                                    onClick={() => handleReviseChapterTopicWithAI(row.subject, row.chapter, row.topic, row.sampleQ)}
+                                    className="px-2.5 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-[11px] font-bold"
+                                  >
+                                    📖 Revise Topic (AI Notes)
+                                  </button>
                                 </td>
                               </tr>
                             );
@@ -3034,18 +3694,18 @@ Return ONLY a valid JSON array of objects with these exact keys:
                 )}
               </div>
 
-              {/* 2. Filter & Question Order / Removal Controls Header */}
-              <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 flex flex-wrap items-center justify-between gap-3">
+              {/* Filter Bar */}
+              <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 flex flex-wrap items-center justify-between gap-3 print:hidden">
                 <div>
                   <h3 className="text-sm font-bold text-white">
-                    Questions Review, Custom Order Renamer (`🔢 Set Order / Rename Q`) & Question Remover (`🗑️`)
+                    Questions Review, 🤖 Ask AI (Why Wrong), 📖 Revise Topic & 🔢 Order Manager
                   </h3>
                   <p className="text-xs text-slate-400">
-                    Har question par `Set Order / Rename Q` daba kar aap uska Order Number aur Naam apne hisab se set kar sakte hain.
+                    Har question me "🤖 Ask AI: Kyun Galat Hua?" aur "📖 Revise Topic" button diya gaya hai.
                   </p>
                 </div>
-                <div className="flex gap-2">
-                  {['all', 'wrong', 'unattempted', 'correct'].map((f) => (
+                <div className="flex flex-wrap gap-2">
+                  {['all', 'wrong', 'unattempted', 'correct', 'starred'].map((f) => (
                     <button
                       key={f}
                       onClick={() => setFilterMode(f)}
@@ -3053,13 +3713,13 @@ Return ONLY a valid JSON array of objects with these exact keys:
                         filterMode === f ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-slate-300'
                       }`}
                     >
-                      {f}
+                      {f === 'starred' ? '★ Starred' : f}
                     </button>
                   ))}
                 </div>
               </div>
 
-              {/* 3. Question-by-Question Revision Cards */}
+              {/* Question-by-Question Revision Cards */}
               <div className="space-y-4">
                 {selectedAttempt.questions.map((q, idx) => {
                   const uAns = selectedAttempt.userAnswers?.[idx];
@@ -3067,10 +3727,13 @@ Return ONLY a valid JSON array of objects with these exact keys:
                   const isSkipped = uAns === undefined;
                   const isWrong = !isSkipped && !isCorrect;
                   const qSpent = selectedAttempt.questionTimeSpent?.[idx] || 0;
+                  const savedAiCoachNote = selectedAttempt.aiAnalysis?.[idx] || '';
+                  const isAiLoading = !!aiLoadingMap[idx];
 
                   if (filterMode === 'wrong' && !isWrong) return null;
                   if (filterMode === 'unattempted' && !isSkipped) return null;
                   if (filterMode === 'correct' && !isCorrect) return null;
+                  if (filterMode === 'starred' && !q.starred) return null;
 
                   const revPassage = getLocalizedPassageText(q, testLang);
                   const revQuestion = getLocalizedQuestionText(q, testLang);
@@ -3083,6 +3746,16 @@ Return ONLY a valid JSON array of objects with these exact keys:
                           <span className="px-2.5 py-1 rounded-lg bg-indigo-600 text-white text-xs font-extrabold">
                             Order #{idx + 1} ({q.customLabel || `Q.${idx + 1}`})
                           </span>
+                          <button
+                            onClick={() => toggleStarInReview(idx)}
+                            className={`px-2.5 py-1 rounded-lg text-xs font-bold transition ${
+                              q.starred
+                                ? 'bg-amber-400 text-slate-950'
+                                : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+                            }`}
+                          >
+                            {q.starred ? '★ Starred' : '☆ Star'}
+                          </button>
                           {q.subject && (
                             <span className="px-2 py-0.5 rounded-md bg-indigo-500/15 text-indigo-300 text-[11px]">
                               {q.subject}
@@ -3100,21 +3773,19 @@ Return ONLY a valid JSON array of objects with these exact keys:
                           )}
                           <button
                             onClick={() => handleEditSingleQuestionMeta(idx)}
-                            className="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-amber-300 text-[10px] flex items-center gap-1"
+                            className="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-amber-300 text-[10px] flex items-center gap-1 print:hidden"
                           >
                             <Edit3 className="w-2.5 h-2.5" /> Edit Topic
                           </button>
                         </div>
 
-                        {/* Question Custom Order Rename + Up/Down + Remove Toolbar */}
-                        <div className="flex flex-wrap items-center gap-1.5">
+                        <div className="flex flex-wrap items-center gap-1.5 print:hidden">
                           <span className="text-[11px] text-slate-400 mr-1 font-mono">
                             ⏱ {formatShortTime(qSpent)}
                           </span>
 
                           <button
                             onClick={() => handleCustomOrderAndRenameQuestion(idx)}
-                            title="Is Question ka Order Number aur Custom Label apne hisab se set karein"
                             className="px-2.5 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500 text-amber-300 hover:text-slate-950 text-xs font-bold flex items-center gap-1 transition"
                           >
                             <Hash className="w-3.5 h-3.5" /> Set Order / Rename Q
@@ -3123,7 +3794,6 @@ Return ONLY a valid JSON array of objects with these exact keys:
                           <button
                             disabled={idx === 0}
                             onClick={() => handleMoveQuestionInSavedMock(idx, idx - 1)}
-                            title="Move Up"
                             className="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 disabled:opacity-30 text-slate-200 text-xs flex items-center gap-0.5"
                           >
                             <ArrowUp className="w-3.5 h-3.5" /> Up
@@ -3132,7 +3802,6 @@ Return ONLY a valid JSON array of objects with these exact keys:
                           <button
                             disabled={idx === selectedAttempt.questions.length - 1}
                             onClick={() => handleMoveQuestionInSavedMock(idx, idx + 1)}
-                            title="Move Down"
                             className="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 disabled:opacity-30 text-slate-200 text-xs flex items-center gap-0.5"
                           >
                             <ArrowDown className="w-3.5 h-3.5" /> Down
@@ -3140,7 +3809,6 @@ Return ONLY a valid JSON array of objects with these exact keys:
 
                           <button
                             onClick={() => handleRemoveQuestionFromSavedMock(idx)}
-                            title="Is Question ko Saved Mock se Remove karein"
                             className="px-2.5 py-1 rounded-lg bg-rose-500/15 hover:bg-rose-600 text-rose-300 hover:text-white text-xs font-semibold flex items-center gap-1"
                           >
                             <Trash2 className="w-3.5 h-3.5" /> Remove Q
@@ -3189,7 +3857,65 @@ Return ONLY a valid JSON array of objects with these exact keys:
                         <strong className="text-indigo-400">Solution: </strong> {revExplanation}
                       </div>
 
-                      <div className="pt-2">
+                      {/* ==================================================================== */}
+                      {/* 🤖 ASK TO AI (WHY WRONG + SHORT TRICK) & 📖 REVISE CHAPTER BAR        */}
+                      {/* ==================================================================== */}
+                      <div className="p-3.5 rounded-xl bg-indigo-950/25 border border-indigo-500/30 space-y-3 print:hidden">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <button
+                              disabled={isAiLoading}
+                              onClick={() => handleAskAiWhyWrong(idx, customDoubtInput[idx] || '')}
+                              className="px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-xs font-extrabold flex items-center gap-1.5 shadow"
+                            >
+                              <Sparkles className="w-3.5 h-3.5" />
+                              {isAiLoading
+                                ? 'AI Coach Analyzing Your Mistake...'
+                                : savedAiCoachNote
+                                ? '🤖 Re-Ask AI (Kyun Galat Hua & Short Trick)'
+                                : '🤖 Ask AI: Mera Question Kyun Galat Hua & Short Trick'}
+                            </button>
+
+                            <button
+                              onClick={() =>
+                                handleReviseChapterTopicWithAI(
+                                  q.subject || selectedAttempt.primarySubject || 'General',
+                                  q.chapter || 'General',
+                                  q.topic || 'Core Concept',
+                                  q
+                                )
+                              }
+                              className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-extrabold flex items-center gap-1.5 shadow"
+                            >
+                              <BookOpen className="w-3.5 h-3.5" />
+                              📖 Revise "{q.topic || q.chapter}" (Taaki Dubara Galti Na Ho)
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Optional Custom Doubt Input for this specific Question */}
+                        <div className="flex gap-2">
+                          <input
+                            type="text"
+                            value={customDoubtInput[idx] || ''}
+                            onChange={(e) => setCustomDoubtInput({ ...customDoubtInput, [idx]: e.target.value })}
+                            placeholder="Is question me apna koi khas doubt puchna ho to yahan likhein aur 'Ask AI' dabayein..."
+                            className="flex-1 px-3 py-1.5 rounded-lg bg-slate-950 border border-slate-800 text-xs text-white"
+                          />
+                        </div>
+
+                        {/* Display AI Mistake Analysis & Short Trick if generated */}
+                        {savedAiCoachNote && (
+                          <div className="p-4 rounded-xl bg-slate-950 border border-indigo-500/40 text-xs text-slate-200 whitespace-pre-line leading-relaxed">
+                            <div className="text-indigo-400 font-extrabold mb-1.5">
+                              🤖 AI Personal Coach Analysis (Why Wrong + Exam Short Trick):
+                            </div>
+                            {savedAiCoachNote}
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="pt-1">
                         <label className="block text-xs text-amber-400 font-semibold mb-1">Meri Galti Kya Thi? (Personal Revision Note):</label>
                         <div className="flex gap-2">
                           <input
@@ -3201,7 +3927,7 @@ Return ONLY a valid JSON array of objects with these exact keys:
                           />
                           <button
                             onClick={() => saveMistakeNote(idx, noteInput[idx] ?? selectedAttempt.notes?.[idx] ?? '')}
-                            className="px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-500 text-white text-xs font-semibold"
+                            className="px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-500 text-white text-xs font-semibold print:hidden"
                           >
                             Save Note
                           </button>
