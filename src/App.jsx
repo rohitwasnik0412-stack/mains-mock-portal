@@ -23,7 +23,9 @@ import {
 import {
   BookOpen, Clock, Upload, Download, FileUp, LogOut, Key,
   FolderKanban, Sparkles, ShieldQuestion, Filter, Layers,
-  RefreshCw, Edit3, Trash2, FileText
+  RefreshCw, Edit3, Trash2, FileText, ArrowUp, ArrowDown,
+  ZoomIn, ZoomOut, Pause, Play, Maximize2, Award, BarChart3,
+  CheckCircle2, XCircle, AlertCircle
 } from 'lucide-react';
 
 const SAMPLE_QUESTIONS = [
@@ -123,7 +125,6 @@ export default function App() {
   const [positiveMarks, setPositiveMarks] = useState(3);
   const [negativeMarks, setNegativeMarks] = useState(1);
 
-  // Optional Manual Chapter/Subject Override (If left blank, AI decides automatically)
   const [customSubjectInput, setCustomSubjectInput] = useState('');
   const [customChapterInput, setCustomChapterInput] = useState('');
   const [customTopicInput, setCustomTopicInput] = useState('');
@@ -131,12 +132,18 @@ export default function App() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [statusMsg, setStatusMsg] = useState('');
 
+  // CBT Test Interface States
   const [activeQuestions, setActiveQuestions] = useState([]);
   const [currentIdx, setCurrentIdx] = useState(0);
   const [userAnswers, setUserAnswers] = useState({});
   const [markedForReview, setMarkedForReview] = useState({});
+  const [visitedQuestions, setVisitedQuestions] = useState({ 0: true });
+  const [questionTimeSpent, setQuestionTimeSpent] = useState({});
   const [timeLeft, setTimeLeft] = useState(0);
   const [testRunning, setTestRunning] = useState(false);
+  const [isPaused, setIsPaused] = useState(false);
+  const [zoomScale, setZoomScale] = useState(100);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
 
   const [savedAttempts, setSavedAttempts] = useState([]);
   const [selectedAttempt, setSelectedAttempt] = useState(null);
@@ -159,8 +166,9 @@ export default function App() {
     return () => unsub();
   }, []);
 
+  // Main Countdown + Per-Question Time Tracker
   useEffect(() => {
-    if (!testRunning || timeLeft <= 0) {
+    if (!testRunning || isPaused || timeLeft <= 0) {
       if (testRunning && timeLeft === 0) {
         handleSubmitTest();
       }
@@ -168,9 +176,21 @@ export default function App() {
     }
     const timer = setInterval(() => {
       setTimeLeft((prev) => Math.max(0, prev - 1));
+      setQuestionTimeSpent((prev) => ({
+        ...prev,
+        [currentIdx]: (prev[currentIdx] || 0) + 1
+      }));
     }, 1000);
     return () => clearInterval(timer);
-  }, [testRunning, timeLeft]);
+  }, [testRunning, isPaused, timeLeft, currentIdx]);
+
+  const sortAttemptsByOrder = (list) => {
+    return [...list].sort((a, b) => {
+      const orderA = a.customOrder !== undefined ? a.customOrder : (9999999999999 - (a.timestamp || 0));
+      const orderB = b.customOrder !== undefined ? b.customOrder : (9999999999999 - (b.timestamp || 0));
+      return orderA - orderB;
+    });
+  };
 
   const syncAndLoadUserAttempts = async (currentUser) => {
     const uid = currentUser.uid;
@@ -211,12 +231,12 @@ export default function App() {
         }
       }
 
-      cloudList.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
-      setSavedAttempts(cloudList);
-      localStorage.setItem(`attempts_${uid}`, JSON.stringify(cloudList));
+      const sorted = sortAttemptsByOrder(cloudList);
+      setSavedAttempts(sorted);
+      localStorage.setItem(`attempts_${uid}`, JSON.stringify(sorted));
       setCloudSyncStatus('✓ Cloud Synced (Laptop + Mobile)');
     } catch (err) {
-      setSavedAttempts(localList);
+      setSavedAttempts(sortAttemptsByOrder(localList));
       setCloudSyncStatus('⚠️ Local Mode');
     }
   };
@@ -356,7 +376,7 @@ export default function App() {
         extracted += `\n--- Page ${i} ---\n` + pageStr;
       }
       setRawText(extracted);
-      setStatusMsg(`✓ PDF Loaded (${pdf.numPages} Pages)! Ab aap Custom Range ya 'Generate Full PDF Mock (All Questions)' daba sakte hain.`);
+      setStatusMsg(`✓ PDF Loaded (${pdf.numPages} Pages)! Ab aap Custom Range ya 'Generate Full PDF Mock' daba sakte hain.`);
     } catch (err) {
       setStatusMsg('PDF read error: ' + err.message);
     }
@@ -439,7 +459,6 @@ export default function App() {
     return { error: lastErr };
   };
 
-  // Supports both Range Mock (startQ to endQ) and Full PDF Mock (isFullPdf = true)
   const generateMockFromText = async (isFullPdf = false) => {
     const cleanKey = geminiKey.trim();
     if (!cleanKey) {
@@ -463,10 +482,9 @@ export default function App() {
         'gemini-2.0-flash'
       ];
 
-      // Determine page batches to scan
       const firstPage = isFullPdf ? 1 : startPage;
       const lastPage = isFullPdf ? (totalPages || 1) : endPage;
-      const batchSize = 8; // 8 pages per AI batch so even huge PDFs & long Cloze Tests never get cut off!
+      const batchSize = 8;
 
       let allExtractedQuestions = [];
       let lastError = '';
@@ -484,7 +502,7 @@ CRITICAL RULE FOR CLOZE TEST, READING COMPREHENSION (RC), PASSAGE, OR DATA INTER
 
 Automatically classify each question into:
 1. "subject": ("Quantitative Aptitude", "Reasoning & General Intelligence", "English Comprehension", "General Awareness", "Computer Knowledge", or "Economics & Finance")
-2. "chapter": Exact chapter name (e.g., "Cloze Test", "Reading Comprehension", "Percentage", "Indian Polity", "Macroeconomics", etc.)
+2. "chapter": Exact chapter name (e.g., "Cloze Test", "Reading Comprehension", "Percentage", "Indian Polity", "Analogy", etc.)
 3. "topic": Specific micro-topic tested.
 
 Return ONLY a valid JSON array of objects with these exact keys:
@@ -532,13 +550,11 @@ Return ONLY a valid JSON array of objects with these exact keys:
             allExtractedQuestions.push(...batchParsed);
           }
 
-          // If user asked for a specific range and we already found enough questions, stop early
           if (!isFullPdf && allExtractedQuestions.length >= (endQ - startQ + 1)) {
             break;
           }
         }
       } else {
-        // Direct pasted text mode
         setStatusMsg('AI extracting questions & passages from text...');
         const parts = [{ text: buildPrompt('Pasted Text') + `\n\nText:\n${rawText.slice(0, 35000)}` }];
         for (const modelName of modelsToTry) {
@@ -561,7 +577,6 @@ Return ONLY a valid JSON array of objects with these exact keys:
       }
 
       if (allExtractedQuestions.length > 0) {
-        // Post-process: Carry forward Cloze Test / RC passage if AI put it on the first question of a set, and apply optional user custom Subject/Chapter override
         let lastKnownPassage = '';
         const finalQuestions = allExtractedQuestions.map((q, idx) => {
           const qTextLower = (q.question || '').toLowerCase();
@@ -571,6 +586,7 @@ Return ONLY a valid JSON array of objects with these exact keys:
             chapLower.includes('comprehension') ||
             chapLower.includes('passage') ||
             qTextLower.includes('blank no') ||
+            qTextLower.includes('blank number') ||
             qTextLower.includes('fill in blank') ||
             qTextLower.includes('according to the passage');
 
@@ -616,13 +632,31 @@ Return ONLY a valid JSON array of objects with these exact keys:
     setCurrentIdx(0);
     setUserAnswers({});
     setMarkedForReview({});
+    setVisitedQuestions({ 0: true });
+    setQuestionTimeSpent({});
+    setIsPaused(false);
+    setZoomScale(100);
     setTimeLeft(durationMins * 60);
     setTestRunning(true);
     setActiveTab('test');
   };
 
+  const navigateToQuestion = (idx) => {
+    setCurrentIdx(idx);
+    setVisitedQuestions((prev) => ({ ...prev, [idx]: true }));
+  };
+
+  const toggleFullScreen = () => {
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen?.().catch(() => {});
+    } else {
+      document.exitFullscreen?.().catch(() => {});
+    }
+  };
+
   const handleSubmitTest = async () => {
     setTestRunning(false);
+    setIsPaused(false);
     let correct = 0;
     let wrong = 0;
     let unattempted = 0;
@@ -642,8 +676,9 @@ Return ONLY a valid JSON array of objects with these exact keys:
       else wrong++;
     });
 
-    const totalScore = (correct * positiveMarks) - (wrong * negativeMarks);
+    const totalScore = Number(((correct * positiveMarks) - (wrong * negativeMarks)).toFixed(2));
     const maxScore = activeQuestions.length * positiveMarks;
+    const totalTimeSpentSec = Object.values(questionTimeSpent).reduce((a, b) => a + b, 0);
 
     const primarySubject = customSubjectInput.trim() || [...subjectsSet][0] || 'Mixed Subject';
     const primaryChapter = customChapterInput.trim() || [...chaptersSet][0] || 'Mixed Chapter';
@@ -660,7 +695,10 @@ Return ONLY a valid JSON array of objects with these exact keys:
       topicsList: [...topicsSet],
       dateStr: new Date().toLocaleString('en-IN'),
       timestamp: Date.now(),
+      customOrder: 0,
       durationMins,
+      totalTimeSpentSec,
+      questionTimeSpent,
       positiveMarks,
       negativeMarks,
       totalScore,
@@ -683,7 +721,7 @@ Return ONLY a valid JSON array of objects with these exact keys:
       setCloudSyncStatus('⚠️ Saved on Device');
     }
 
-    const updated = [attemptRecord, ...savedAttempts];
+    const updated = [attemptRecord, ...savedAttempts.map((a, i) => ({ ...a, customOrder: i + 1 }))];
     setSavedAttempts(updated);
     if (user) localStorage.setItem(`attempts_${user.uid}`, JSON.stringify(updated));
 
@@ -692,7 +730,174 @@ Return ONLY a valid JSON array of objects with these exact keys:
     setActiveTab('review');
   };
 
-  // Rename Chapter / Subject / Topic anytime according to User Preference
+  // Recalculate attempt stats whenever questions are removed, reordered, or key is changed
+  const recalculateAndSaveAttempt = async (baseAttempt, newQuestions, newAnswers, newNotes, newTimeSpent) => {
+    let correct = 0, wrong = 0, unattempted = 0;
+    const subjectsSet = new Set();
+    const chaptersSet = new Set();
+    const topicsSet = new Set();
+
+    newQuestions.forEach((q, idx) => {
+      if (q.subject) subjectsSet.add(q.subject);
+      if (q.chapter) chaptersSet.add(q.chapter);
+      if (q.topic) topicsSet.add(q.topic);
+
+      const ans = newAnswers[idx];
+      if (ans === undefined) unattempted++;
+      else if (ans === q.correctIndex) correct++;
+      else wrong++;
+    });
+
+    const pos = baseAttempt.positiveMarks || 3;
+    const neg = baseAttempt.negativeMarks || 1;
+    const totalScore = Number(((correct * pos) - (wrong * neg)).toFixed(2));
+    const maxScore = newQuestions.length * pos;
+
+    const updatedAttempt = {
+      ...baseAttempt,
+      qRange: `Total ${newQuestions.length} Qs`,
+      questions: newQuestions,
+      userAnswers: newAnswers,
+      notes: newNotes,
+      questionTimeSpent: newTimeSpent,
+      correct,
+      wrong,
+      unattempted,
+      totalScore,
+      maxScore,
+      subjectsList: [...subjectsSet],
+      chaptersList: [...chaptersSet],
+      topicsList: [...topicsSet]
+    };
+
+    setSelectedAttempt(updatedAttempt);
+    const updatedList = savedAttempts.map(a => a.timestamp === baseAttempt.timestamp ? updatedAttempt : a);
+    setSavedAttempts(updatedList);
+    if (user) localStorage.setItem(`attempts_${user.uid}`, JSON.stringify(updatedList));
+
+    if (updatedAttempt.docId) {
+      try {
+        await updateDoc(doc(db, 'mockAttempts', updatedAttempt.docId), {
+          qRange: updatedAttempt.qRange,
+          questions: newQuestions,
+          userAnswers: newAnswers,
+          notes: newNotes,
+          questionTimeSpent: newTimeSpent,
+          correct,
+          wrong,
+          unattempted,
+          totalScore,
+          maxScore,
+          subjectsList: updatedAttempt.subjectsList,
+          chaptersList: updatedAttempt.chaptersList,
+          topicsList: updatedAttempt.topicsList
+        });
+      } catch (e) {
+        console.error("Cloud update error:", e);
+      }
+    }
+  };
+
+  // REMOVE ANY QUESTION FROM A SAVED MOCK TEST
+  const handleRemoveQuestionFromSavedMock = async (qIdx) => {
+    if (!selectedAttempt) return;
+    if (selectedAttempt.questions.length <= 1) {
+      alert("Mock test me kam se kam 1 question hona zaroori hai.");
+      return;
+    }
+    if (!window.confirm(`Kya aap Question #${qIdx + 1} ko is Saved Mock se hamesha ke liye hatana (Remove) chahte hain?`)) {
+      return;
+    }
+
+    const newQuestions = [];
+    const newAnswers = {};
+    const newNotes = {};
+    const newTimeSpent = {};
+
+    selectedAttempt.questions.forEach((q, i) => {
+      if (i === qIdx) return;
+      const newIndex = newQuestions.length;
+      newQuestions.push({ ...q, qNum: newIndex + 1 });
+      if (selectedAttempt.userAnswers?.[i] !== undefined) {
+        newAnswers[newIndex] = selectedAttempt.userAnswers[i];
+      }
+      if (selectedAttempt.notes?.[i] !== undefined) {
+        newNotes[newIndex] = selectedAttempt.notes[i];
+      }
+      if (selectedAttempt.questionTimeSpent?.[i] !== undefined) {
+        newTimeSpent[newIndex] = selectedAttempt.questionTimeSpent[i];
+      }
+    });
+
+    await recalculateAndSaveAttempt(selectedAttempt, newQuestions, newAnswers, newNotes, newTimeSpent);
+  };
+
+  // REORDER QUESTIONS INSIDE A SAVED MOCK TEST (Move Up / Move Down / Move to Position #)
+  const handleMoveQuestionInSavedMock = async (fromIdx, toIdx) => {
+    if (!selectedAttempt) return;
+    const total = selectedAttempt.questions.length;
+    if (toIdx < 0 || toIdx >= total || fromIdx === toIdx) return;
+
+    const itemBundle = selectedAttempt.questions.map((q, i) => ({
+      q,
+      ans: selectedAttempt.userAnswers?.[i],
+      note: selectedAttempt.notes?.[i],
+      time: selectedAttempt.questionTimeSpent?.[i]
+    }));
+
+    const [movedItem] = itemBundle.splice(fromIdx, 1);
+    itemBundle.splice(toIdx, 0, movedItem);
+
+    const newQuestions = [];
+    const newAnswers = {};
+    const newNotes = {};
+    const newTimeSpent = {};
+
+    itemBundle.forEach((bundle, newIdx) => {
+      newQuestions.push({ ...bundle.q, qNum: newIdx + 1 });
+      if (bundle.ans !== undefined) newAnswers[newIdx] = bundle.ans;
+      if (bundle.note !== undefined) newNotes[newIdx] = bundle.note;
+      if (bundle.time !== undefined) newTimeSpent[newIdx] = bundle.time;
+    });
+
+    await recalculateAndSaveAttempt(selectedAttempt, newQuestions, newAnswers, newNotes, newTimeSpent);
+  };
+
+  const handleJumpQuestionPosition = async (fromIdx) => {
+    if (!selectedAttempt) return;
+    const total = selectedAttempt.questions.length;
+    const input = window.prompt(`Question #${fromIdx + 1} ko kis number (1 se ${total}) par set karna hai?`, String(fromIdx + 1));
+    if (!input) return;
+    const targetNum = parseInt(input, 10);
+    if (isNaN(targetNum) || targetNum < 1 || targetNum > total) {
+      alert(`Kripya 1 se ${total} ke beech ka number dalein.`);
+      return;
+    }
+    await handleMoveQuestionInSavedMock(fromIdx, targetNum - 1);
+  };
+
+  // REORDER SAVED MOCK TESTS IN VAULT
+  const handleMoveAttemptInVault = async (fromIdx, toIdx) => {
+    if (toIdx < 0 || toIdx >= savedAttempts.length || fromIdx === toIdx) return;
+    const copy = [...savedAttempts];
+    const [moved] = copy.splice(fromIdx, 1);
+    copy.splice(toIdx, 0, moved);
+
+    const reindexed = copy.map((att, idx) => ({ ...att, customOrder: idx }));
+    setSavedAttempts(reindexed);
+    if (user) localStorage.setItem(`attempts_${user.uid}`, JSON.stringify(reindexed));
+
+    for (const att of reindexed) {
+      if (att.docId) {
+        try {
+          await updateDoc(doc(db, 'mockAttempts', att.docId), { customOrder: att.customOrder });
+        } catch (e) {
+          // Ignore
+        }
+      }
+    }
+  };
+
   const handleRenameChapterGroup = async (oldSubject, oldChapter) => {
     const newChapter = window.prompt(`"${oldChapter}" chapter ka naya naam apne hisab se likhein:`, oldChapter);
     if (!newChapter || !newChapter.trim()) return;
@@ -745,7 +950,6 @@ Return ONLY a valid JSON array of objects with these exact keys:
     if (user) localStorage.setItem(`attempts_${user.uid}`, JSON.stringify(updatedAttempts));
   };
 
-  // Edit single question's Chapter/Topic/Passage inside Revision Sheet
   const handleEditSingleQuestionMeta = async (qIdx) => {
     if (!selectedAttempt) return;
     const currentQ = selectedAttempt.questions[qIdx];
@@ -764,20 +968,13 @@ Return ONLY a valid JSON array of objects with these exact keys:
         : q
     );
 
-    const updatedAttempt = { ...selectedAttempt, questions: updatedQuestions };
-    setSelectedAttempt(updatedAttempt);
-
-    const updatedList = savedAttempts.map(a => a.timestamp === selectedAttempt.timestamp ? updatedAttempt : a);
-    setSavedAttempts(updatedList);
-    if (user) localStorage.setItem(`attempts_${user.uid}`, JSON.stringify(updatedList));
-
-    if (selectedAttempt.docId) {
-      try {
-        await updateDoc(doc(db, 'mockAttempts', selectedAttempt.docId), { questions: updatedQuestions });
-      } catch (e) {
-        console.error(e);
-      }
-    }
+    await recalculateAndSaveAttempt(
+      selectedAttempt,
+      updatedQuestions,
+      selectedAttempt.userAnswers || {},
+      selectedAttempt.notes || {},
+      selectedAttempt.questionTimeSpent || {}
+    );
   };
 
   const handleDeleteAttempt = async (attToDelete) => {
@@ -799,62 +996,25 @@ Return ONLY a valid JSON array of objects with these exact keys:
     const updatedQuestions = selectedAttempt.questions.map((q, i) =>
       i === qIdx ? { ...q, correctIndex: newCorrectIdx } : q
     );
-
-    let correct = 0, wrong = 0, unattempted = 0;
-    updatedQuestions.forEach((q, idx) => {
-      const ans = selectedAttempt.userAnswers?.[idx];
-      if (ans === undefined) unattempted++;
-      else if (ans === q.correctIndex) correct++;
-      else wrong++;
-    });
-
-    const totalScore = (correct * selectedAttempt.positiveMarks) - (wrong * selectedAttempt.negativeMarks);
-    const updatedAttempt = {
-      ...selectedAttempt,
-      questions: updatedQuestions,
-      correct,
-      wrong,
-      unattempted,
-      totalScore
-    };
-
-    setSelectedAttempt(updatedAttempt);
-    const updatedList = savedAttempts.map(a => a.timestamp === selectedAttempt.timestamp ? updatedAttempt : a);
-    setSavedAttempts(updatedList);
-    if (user) localStorage.setItem(`attempts_${user.uid}`, JSON.stringify(updatedList));
-
-    if (selectedAttempt.docId) {
-      try {
-        await updateDoc(doc(db, 'mockAttempts', selectedAttempt.docId), {
-          questions: updatedQuestions,
-          correct,
-          wrong,
-          unattempted,
-          totalScore
-        });
-      } catch (e) {
-        console.error("Answer key cloud update error:", e);
-      }
-    }
+    await recalculateAndSaveAttempt(
+      selectedAttempt,
+      updatedQuestions,
+      selectedAttempt.userAnswers || {},
+      selectedAttempt.notes || {},
+      selectedAttempt.questionTimeSpent || {}
+    );
   };
 
   const saveMistakeNote = async (qIdx, noteText) => {
     if (!selectedAttempt) return;
     const updatedNotes = { ...(selectedAttempt.notes || {}), [qIdx]: noteText };
-    const updatedAttempt = { ...selectedAttempt, notes: updatedNotes };
-    setSelectedAttempt(updatedAttempt);
-
-    const updatedList = savedAttempts.map(a => a.timestamp === selectedAttempt.timestamp ? updatedAttempt : a);
-    setSavedAttempts(updatedList);
-    if (user) localStorage.setItem(`attempts_${user.uid}`, JSON.stringify(updatedList));
-
-    if (selectedAttempt.docId) {
-      try {
-        await updateDoc(doc(db, 'mockAttempts', selectedAttempt.docId), { notes: updatedNotes });
-      } catch (e) {
-        console.error("Note cloud update error:", e);
-      }
-    }
+    await recalculateAndSaveAttempt(
+      selectedAttempt,
+      selectedAttempt.questions,
+      selectedAttempt.userAnswers || {},
+      updatedNotes,
+      selectedAttempt.questionTimeSpent || {}
+    );
   };
 
   const chapterWiseStats = useMemo(() => {
@@ -911,6 +1071,48 @@ Return ONLY a valid JSON array of objects with these exact keys:
     return [...s];
   }, [chapterWiseStats]);
 
+  // Topic-wise breakdown for the currently selected attempt in Detailed Result View
+  const selectedAttemptTopicBreakdown = useMemo(() => {
+    if (!selectedAttempt) return [];
+    const map = {};
+    const pos = selectedAttempt.positiveMarks || 3;
+    const neg = selectedAttempt.negativeMarks || 1;
+
+    (selectedAttempt.questions || []).forEach((q, idx) => {
+      const chap = q.chapter || 'General';
+      const top = q.topic || 'Core Concept';
+      const key = `${chap} — ${top}`;
+      if (!map[key]) {
+        map[key] = {
+          chapter: chap,
+          topic: top,
+          total: 0,
+          correct: 0,
+          wrong: 0,
+          skipped: 0,
+          marks: 0,
+          timeSec: 0
+        };
+      }
+      const ans = selectedAttempt.userAnswers?.[idx];
+      const qTime = selectedAttempt.questionTimeSpent?.[idx] || 0;
+      map[key].total += 1;
+      map[key].timeSec += qTime;
+
+      if (ans === undefined) {
+        map[key].skipped += 1;
+      } else if (ans === q.correctIndex) {
+        map[key].correct += 1;
+        map[key].marks += pos;
+      } else {
+        map[key].wrong += 1;
+        map[key].marks -= neg;
+      }
+    });
+
+    return Object.values(map);
+  }, [selectedAttempt]);
+
   const exportBackupJSON = () => {
     const blob = new Blob([JSON.stringify(savedAttempts, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
@@ -949,11 +1151,42 @@ Return ONLY a valid JSON array of objects with these exact keys:
     reader.readAsText(file);
   };
 
-  const formatTimer = (sec) => {
+  const getTimerParts = (sec) => {
+    const hrs = Math.floor(sec / 3600);
+    const mins = Math.floor((sec % 3600) / 60);
+    const secs = sec % 60;
+    return {
+      h: String(hrs).padStart(2, '0'),
+      m: String(mins).padStart(2, '0'),
+      s: String(secs).padStart(2, '0')
+    };
+  };
+
+  const formatShortTime = (sec = 0) => {
     const m = Math.floor(sec / 60);
     const s = sec % 60;
     return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
   };
+
+  // Live CBT Palette Counts (Answered, Not Answered, Marked, Marked & Answered)
+  const cbtPaletteCounts = useMemo(() => {
+    let answered = 0;
+    let notAnswered = 0;
+    let markedOnly = 0;
+    let markedAndAnswered = 0;
+
+    activeQuestions.forEach((_, i) => {
+      const hasAns = userAnswers[i] !== undefined;
+      const isMark = !!markedForReview[i];
+
+      if (hasAns && isMark) markedAndAnswered++;
+      else if (isMark && !hasAns) markedOnly++;
+      else if (hasAns) answered++;
+      else notAnswered++;
+    });
+
+    return { answered, notAnswered, markedOnly, markedAndAnswered };
+  }, [activeQuestions, userAnswers, markedForReview]);
 
   if (authLoading) {
     return <div className="min-h-screen flex items-center justify-center bg-slate-950 text-white">Loading Portal...</div>;
@@ -1207,6 +1440,355 @@ Return ONLY a valid JSON array of objects with these exact keys:
     );
   }
 
+  // ============================================================================
+  // REAL-EXAM CBT INTERFACE WHEN TEST IS RUNNING (Matches Screenshot 2)
+  // ============================================================================
+  if (activeTab === 'test' && activeQuestions.length > 0) {
+    const tParts = getTimerParts(timeLeft);
+    const currQ = activeQuestions[currentIdx];
+    const currSpentSec = questionTimeSpent[currentIdx] || 0;
+
+    return (
+      <div className="min-h-screen bg-[#f4f5f9] text-slate-900 flex flex-col select-none">
+        {/* 1. Top White Exam Header */}
+        <header className="bg-white border-b border-slate-200 px-4 py-2.5 flex flex-wrap items-center justify-between gap-3 shadow-sm">
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setZoomScale((z) => Math.min(135, z + 10))}
+              className="px-3 py-1.5 rounded-full bg-indigo-50 hover:bg-indigo-100 text-[#2e2a85] text-xs font-bold flex items-center gap-1 transition"
+            >
+              <ZoomIn className="w-3.5 h-3.5" /> Zoom (+)
+            </button>
+            <button
+              onClick={() => setZoomScale((z) => Math.max(80, z - 10))}
+              className="px-3 py-1.5 rounded-full bg-indigo-50 hover:bg-indigo-100 text-[#2e2a85] text-xs font-bold flex items-center gap-1 transition"
+            >
+              <ZoomOut className="w-3.5 h-3.5" /> Zoom (-)
+            </button>
+          </div>
+
+          <div className="text-center">
+            <h1 className="text-base md:text-lg font-extrabold text-slate-900">{mockTitle}</h1>
+            <p className="text-xs font-semibold text-slate-600">
+              Candidate : [{user.displayName || user.email?.split('@')[0] || 'Rohit'}]
+            </p>
+          </div>
+
+          <div className="flex items-center gap-2.5">
+            <div className="flex flex-col items-center mr-1">
+              <span className="text-[10px] font-bold text-slate-600 uppercase tracking-wider">Time Left</span>
+              <div className="flex items-center gap-1 mt-0.5 font-mono font-extrabold text-sm md:text-base text-[#1e1b4b]">
+                <span className="px-2 py-1 rounded-md bg-indigo-100/80">{tParts.h}</span>
+                <span>:</span>
+                <span className="px-2 py-1 rounded-md bg-indigo-100/80">{tParts.m}</span>
+                <span>:</span>
+                <span className="px-2 py-1 rounded-md bg-indigo-100/80">{tParts.s}</span>
+              </div>
+            </div>
+
+            <button
+              onClick={() => setIsPaused(!isPaused)}
+              className={`px-4 py-2 rounded-lg border text-xs font-bold flex items-center gap-1.5 transition ${
+                isPaused
+                  ? 'bg-amber-500 text-white border-amber-600'
+                  : 'bg-white hover:bg-slate-50 text-[#2e2a85] border-[#2e2a85]/40'
+              }`}
+            >
+              {isPaused ? <Play className="w-3.5 h-3.5" /> : <Pause className="w-3.5 h-3.5" />}
+              {isPaused ? 'Resume' : 'Pause'}
+            </button>
+
+            <button
+              onClick={toggleFullScreen}
+              className="px-3.5 py-2 rounded-lg border border-[#2e2a85]/40 bg-white hover:bg-slate-50 text-[#2e2a85] text-xs font-bold flex items-center gap-1.5 transition"
+            >
+              <Maximize2 className="w-3.5 h-3.5" /> Show Full Screen
+            </button>
+          </div>
+        </header>
+
+        {/* 2. Sub-Header Action Bar */}
+        <div className="bg-white border-b border-slate-200 px-4 py-2 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <span className="px-4 py-1.5 rounded-md bg-[#0a7c2f] text-white text-xs font-bold shadow-sm">
+              Part A
+            </span>
+            {currQ.subject && (
+              <span className="px-3 py-1 rounded-md bg-slate-100 text-slate-700 text-xs font-semibold">
+                {currQ.subject} • {currQ.chapter}
+              </span>
+            )}
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2.5">
+            <button
+              onClick={() => {
+                setMarkedForReview({ ...markedForReview, [currentIdx]: !markedForReview[currentIdx] });
+                if (currentIdx < activeQuestions.length - 1) {
+                  navigateToQuestion(currentIdx + 1);
+                }
+              }}
+              className="px-5 py-2 rounded-md bg-[#2e2a85] hover:bg-[#231f6b] text-white text-xs font-bold shadow-sm transition"
+            >
+              {markedForReview[currentIdx] ? 'Unmark Review' : 'Mark For Review'}
+            </button>
+
+            <button
+              onClick={() => {
+                if (currentIdx < activeQuestions.length - 1) {
+                  navigateToQuestion(currentIdx + 1);
+                }
+              }}
+              className="px-5 py-2 rounded-md bg-[#2e2a85] hover:bg-[#231f6b] text-white text-xs font-bold shadow-sm transition"
+            >
+              Save & Next
+            </button>
+
+            <button
+              onClick={handleSubmitTest}
+              className="px-5 py-2 rounded-md bg-[#2e2a85] hover:bg-emerald-700 text-white text-xs font-bold shadow-sm transition"
+            >
+              Submit Test
+            </button>
+          </div>
+
+          <div>
+            <button
+              onClick={() => {
+                if (window.confirm('Test chhod kar wapas Create Mock par jana chahte hain?')) {
+                  setTestRunning(false);
+                  setActiveTab('create');
+                }
+              }}
+              className="px-3 py-1.5 rounded-md border border-slate-300 text-slate-600 hover:bg-slate-100 text-xs font-semibold"
+            >
+              Exit Test
+            </button>
+          </div>
+        </div>
+
+        {/* 3. Main CBT Split Area: Left Question Paper + Right Question Palette */}
+        <div className="flex-1 flex flex-col lg:flex-row overflow-hidden">
+          {/* Left Question Panel */}
+          <div className="flex-1 p-4 md:p-6 overflow-y-auto relative">
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-base font-extrabold text-slate-900">{mockTitle}</h2>
+              <div className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                <span>Total Answered :</span>
+                <span className="px-2 py-0.5 rounded bg-amber-100 text-amber-900 font-extrabold">
+                  {cbtPaletteCounts.answered + cbtPaletteCounts.markedAndAnswered}
+                </span>
+              </div>
+            </div>
+
+            <div
+              className="bg-white border border-slate-200 rounded-2xl p-5 md:p-7 shadow-sm transition-all"
+              style={{ fontSize: `${zoomScale}%` }}
+            >
+              {/* Question Top Metadata Row */}
+              <div className="flex flex-wrap items-center justify-between gap-2 pb-4 mb-5 border-b border-slate-100">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-extrabold text-slate-900">
+                    Question No. {currentIdx + 1}
+                  </span>
+                  {currQ.topic && (
+                    <span className="px-2.5 py-0.5 rounded-full bg-indigo-50 text-[#2e2a85] text-[11px] font-semibold">
+                      {currQ.topic}
+                    </span>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-1 text-slate-700 text-xs font-mono font-bold">
+                    <Clock className="w-3.5 h-3.5 text-slate-500" />
+                    <span>{formatShortTime(currSpentSec)}</span>
+                  </div>
+                  <span className="px-2.5 py-0.5 rounded bg-emerald-100 text-emerald-800 text-xs font-extrabold">
+                    +{positiveMarks} / -{negativeMarks}
+                  </span>
+                </div>
+              </div>
+
+              {/* Dedicated Cloze Test / RC Passage Box inside CBT */}
+              {currQ.passage && (
+                <div className="mb-5 p-4 rounded-xl bg-slate-50 border border-indigo-200 max-h-60 overflow-y-auto">
+                  <div className="text-xs font-extrabold text-[#2e2a85] mb-1.5 flex items-center gap-1.5">
+                    <FileText className="w-4 h-4" />
+                    <span>Reference Passage / Cloze Test Paragraph:</span>
+                  </div>
+                  <p className="text-slate-800 leading-relaxed whitespace-pre-line text-sm">
+                    {currQ.passage}
+                  </p>
+                </div>
+              )}
+
+              {/* Question Statement */}
+              <div className="text-slate-900 font-medium leading-relaxed mb-6 whitespace-pre-line">
+                {currQ.question}
+              </div>
+
+              {/* Radio Options List */}
+              <div className="space-y-2.5">
+                {currQ.options.map((opt, oIdx) => {
+                  const selected = userAnswers[currentIdx] === oIdx;
+                  return (
+                    <div
+                      key={oIdx}
+                      onClick={() => setUserAnswers({ ...userAnswers, [currentIdx]: oIdx })}
+                      className={`p-3.5 rounded-xl border cursor-pointer transition flex items-center gap-3.5 ${
+                        selected
+                          ? 'bg-indigo-50/80 border-[#2e2a85] text-slate-950 font-semibold shadow-sm'
+                          : 'bg-white hover:bg-slate-50 border-slate-200 text-slate-800'
+                      }`}
+                    >
+                      <span
+                        className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 ${
+                          selected ? 'border-[#2e2a85]' : 'border-slate-500'
+                        }`}
+                      >
+                        {selected && <span className="w-2.5 h-2.5 rounded-full bg-[#2e2a85]" />}
+                      </span>
+                      <span className="text-xs font-bold text-[#2e2a85] w-4">
+                        {String.fromCharCode(65 + oIdx)}.
+                      </span>
+                      <span className="flex-1">{opt}</span>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Bottom Navigation & Clear inside Card */}
+              <div className="flex flex-wrap items-center justify-between gap-3 pt-6 mt-6 border-t border-slate-100">
+                <button
+                  onClick={() => {
+                    const copy = { ...userAnswers };
+                    delete copy[currentIdx];
+                    setUserAnswers(copy);
+                  }}
+                  className="px-4 py-2 rounded-lg border border-slate-300 hover:bg-slate-100 text-slate-700 text-xs font-bold"
+                >
+                  Clear Response
+                </button>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    disabled={currentIdx === 0}
+                    onClick={() => navigateToQuestion(currentIdx - 1)}
+                    className="px-4 py-2 rounded-lg border border-slate-300 bg-white hover:bg-slate-100 disabled:opacity-40 text-slate-800 text-xs font-bold"
+                  >
+                    ← Previous
+                  </button>
+                  {currentIdx < activeQuestions.length - 1 ? (
+                    <button
+                      onClick={() => navigateToQuestion(currentIdx + 1)}
+                      className="px-5 py-2 rounded-lg bg-[#2e2a85] hover:bg-[#231f6b] text-white text-xs font-bold"
+                    >
+                      Save & Next →
+                    </button>
+                  ) : (
+                    <button
+                      onClick={handleSubmitTest}
+                      className="px-6 py-2 rounded-lg bg-[#0a7c2f] hover:bg-emerald-800 text-white text-xs font-bold"
+                    >
+                      Submit Test ✓
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Right Sidebar: Question Palette + Analysis Counts */}
+          {sidebarOpen && (
+            <aside className="w-full lg:w-80 bg-white border-t lg:border-t-0 lg:border-l border-slate-200 flex flex-col justify-between shrink-0">
+              <div>
+                <div className="px-4 py-2.5 border-b border-slate-200 flex items-center gap-4 text-xs font-bold text-orange-500">
+                  <span>Symbols</span>
+                  <span>Instructions</span>
+                </div>
+
+                <div className="p-4">
+                  <h3 className="text-center font-extrabold text-sm text-slate-900 mb-4">
+                    Part - A : {mockTitle}
+                  </h3>
+
+                  <div className="grid grid-cols-5 gap-2.5 max-h-64 overflow-y-auto p-1">
+                    {activeQuestions.map((_, i) => {
+                      const hasAns = userAnswers[i] !== undefined;
+                      const isMark = !!markedForReview[i];
+                      const isCurr = currentIdx === i;
+
+                      let pillStyle = 'bg-[#2e2a85] text-white'; // Not Answered (Default Blue/Indigo)
+                      if (hasAns && isMark) {
+                        pillStyle = 'bg-yellow-400 text-slate-950'; // Marked & Answered
+                      } else if (isMark) {
+                        pillStyle = 'bg-red-600 text-white'; // Marked
+                      } else if (hasAns) {
+                        pillStyle = 'bg-[#0a7c2f] text-white'; // Answered (Green)
+                      }
+
+                      return (
+                        <button
+                          key={i}
+                          onClick={() => navigateToQuestion(i)}
+                          className={`h-8 rounded-full text-xs font-bold transition flex items-center justify-center ${pillStyle} ${
+                            isCurr ? 'ring-2 ring-offset-2 ring-[#2e2a85]' : ''
+                          }`}
+                        >
+                          {String(i + 1).padStart(2, '0')}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+
+              {/* Bottom Analysis Section (Matches Screenshot 2) */}
+              <div className="border-t border-slate-200">
+                <div className="bg-indigo-50/70 py-2 text-center font-extrabold text-sm text-slate-900 border-b border-slate-200">
+                  Analysis
+                </div>
+                <div className="p-4 space-y-2.5 text-xs font-semibold text-slate-600">
+                  <div className="flex items-center justify-between">
+                    <span>Answered</span>
+                    <span className="px-3 py-1 rounded-full bg-[#0a7c2f] text-white font-bold">
+                      {String(cbtPaletteCounts.answered).padStart(2, '0')}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span>Not Answered</span>
+                    <span className="px-3 py-1 rounded-full bg-[#2e2a85] text-white font-bold">
+                      {String(cbtPaletteCounts.notAnswered).padStart(2, '0')}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span>Marked</span>
+                    <span className="px-3 py-1 rounded-full bg-red-600 text-white font-bold">
+                      {String(cbtPaletteCounts.markedOnly).padStart(2, '0')}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span>Marked & Answered</span>
+                    <span className="px-3 py-1 rounded-full bg-yellow-400 text-slate-950 font-bold">
+                      {String(cbtPaletteCounts.markedAndAnswered).padStart(2, '0')}
+                    </span>
+                  </div>
+
+                  <button
+                    onClick={handleSubmitTest}
+                    className="w-full py-2.5 mt-3 rounded-lg bg-[#0a7c2f] hover:bg-emerald-800 text-white font-bold text-xs shadow"
+                  >
+                    Submit Test & View Detailed Result
+                  </button>
+                </div>
+              </div>
+            </aside>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col">
       <header className="border-b border-slate-800 bg-slate-900/80 backdrop-blur sticky top-0 z-30">
@@ -1315,18 +1897,18 @@ Return ONLY a valid JSON array of objects with these exact keys:
                   <h2 className="text-lg font-bold text-white flex items-center gap-2">
                     <span>1. Upload Mains PDF</span>
                     <span className="px-2.5 py-0.5 rounded-full bg-indigo-500/20 border border-indigo-500/30 text-indigo-300 text-[11px] flex items-center gap-1">
-                      <Sparkles className="w-3 h-3" /> Cloze Test Passage + Auto Chapter AI
+                      <Sparkles className="w-3 h-3" /> Real CBT Interface + Cloze Passage AI
                     </span>
                   </h2>
                 </div>
                 <button
                   onClick={() => {
-                    setMockTitle('SSC CGL Mains Demo (Cloze Test + Topic Tagged)');
+                    setMockTitle('Analogy & Cloze Test CBT Demo');
                     startMockWithQuestions(SAMPLE_QUESTIONS);
                   }}
                   className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold"
                 >
-                  ▶ Run Cloze Test & Topic Demo (5 Qs)
+                  ▶ Run Real CBT Demo Mock (5 Qs)
                 </button>
               </div>
 
@@ -1398,7 +1980,6 @@ Return ONLY a valid JSON array of objects with these exact keys:
                 />
               </div>
 
-              {/* Optional Custom Chapter / Subject Naming Box */}
               <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 space-y-2.5">
                 <div className="text-xs font-semibold text-amber-400 flex items-center justify-between">
                   <span>Custom Chapter Name (Optional)</span>
@@ -1408,14 +1989,14 @@ Return ONLY a valid JSON array of objects with these exact keys:
                   type="text"
                   value={customSubjectInput}
                   onChange={(e) => setCustomSubjectInput(e.target.value)}
-                  placeholder="Subject (Optional, e.g. English / Quant)"
+                  placeholder="Subject (Optional, e.g. English / Reasoning)"
                   className="w-full px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-800 text-xs text-white"
                 />
                 <input
                   type="text"
                   value={customChapterInput}
                   onChange={(e) => setCustomChapterInput(e.target.value)}
-                  placeholder="Chapter Name (Optional, e.g. Cloze Test Set-1)"
+                  placeholder="Chapter Name (Optional, e.g. Analogy - 1)"
                   className="w-full px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-800 text-xs text-white"
                 />
               </div>
@@ -1498,160 +2079,6 @@ Return ONLY a valid JSON array of objects with these exact keys:
           </div>
         )}
 
-        {activeTab === 'test' && activeQuestions.length > 0 && (
-          <div className="grid md:grid-cols-4 gap-6">
-            <div className="md:col-span-3 bg-slate-900 border border-slate-800 rounded-2xl p-6 flex flex-col justify-between">
-              <div>
-                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 pb-4 mb-5">
-                  <div>
-                    <span className="text-xs text-indigo-400 font-semibold">{mockTitle}</span>
-                    <h3 className="text-lg font-bold text-white">
-                      Question {currentIdx + 1} of {activeQuestions.length} (PDF Q.{activeQuestions[currentIdx].qNum || currentIdx + 1})
-                    </h3>
-                    <div className="flex flex-wrap gap-1.5 mt-2">
-                      {activeQuestions[currentIdx].subject && (
-                        <span className="px-2.5 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 text-[11px] font-semibold">
-                          {activeQuestions[currentIdx].subject}
-                        </span>
-                      )}
-                      {activeQuestions[currentIdx].chapter && (
-                        <span className="px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 text-[11px] font-semibold">
-                          Chapter: {activeQuestions[currentIdx].chapter}
-                        </span>
-                      )}
-                      {activeQuestions[currentIdx].topic && (
-                        <span className="px-2.5 py-0.5 rounded-full bg-amber-500/20 text-amber-300 text-[11px] font-semibold">
-                          Topic: {activeQuestions[currentIdx].topic}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                  <div className="px-4 py-2 rounded-xl bg-slate-950 border border-slate-800 flex items-center gap-2 text-amber-400 font-mono font-bold">
-                    <Clock className="w-4 h-4" />
-                    {formatTimer(timeLeft)}
-                  </div>
-                </div>
-
-                {/* Dedicated Cloze Test / Reading Comprehension Passage Box */}
-                {activeQuestions[currentIdx].passage && (
-                  <div className="mb-5 p-4 rounded-2xl bg-slate-950 border border-indigo-500/40 max-h-64 overflow-y-auto">
-                    <div className="flex items-center gap-1.5 text-xs font-bold text-indigo-400 mb-2">
-                      <FileText className="w-4 h-4" />
-                      <span>📖 Reference Passage / Cloze Test Paragraph:</span>
-                    </div>
-                    <p className="text-sm text-slate-200 leading-relaxed whitespace-pre-line">
-                      {activeQuestions[currentIdx].passage}
-                    </p>
-                  </div>
-                )}
-
-                <p className="text-base text-slate-100 leading-relaxed mb-6 whitespace-pre-line font-medium">
-                  {activeQuestions[currentIdx].question}
-                </p>
-
-                <div className="space-y-3">
-                  {activeQuestions[currentIdx].options.map((opt, oIdx) => {
-                    const selected = userAnswers[currentIdx] === oIdx;
-                    return (
-                      <button
-                        key={oIdx}
-                        onClick={() => setUserAnswers({ ...userAnswers, [currentIdx]: oIdx })}
-                        className={`w-full text-left p-4 rounded-xl border text-sm transition flex items-center gap-3 ${
-                          selected
-                            ? 'bg-indigo-600/20 border-indigo-500 text-white font-semibold'
-                            : 'bg-slate-950 border-slate-800 text-slate-300 hover:border-slate-700'
-                        }`}
-                      >
-                        <span className="w-7 h-7 rounded-lg bg-slate-900 border border-slate-700 flex items-center justify-center text-xs font-bold">
-                          {String.fromCharCode(65 + oIdx)}
-                        </span>
-                        <span>{opt}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              <div className="flex flex-wrap items-center justify-between gap-3 pt-6 mt-8 border-t border-slate-800">
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => {
-                      const copy = { ...userAnswers };
-                      delete copy[currentIdx];
-                      setUserAnswers(copy);
-                    }}
-                    className="px-3 py-2 rounded-xl bg-slate-800 text-xs text-slate-300"
-                  >
-                    Clear Response
-                  </button>
-                  <button
-                    onClick={() => setMarkedForReview({ ...markedForReview, [currentIdx]: !markedForReview[currentIdx] })}
-                    className="px-3 py-2 rounded-xl bg-amber-500/20 text-amber-300 text-xs"
-                  >
-                    {markedForReview[currentIdx] ? 'Unmark Review' : 'Mark for Review'}
-                  </button>
-                </div>
-
-                <div className="flex gap-2">
-                  <button
-                    disabled={currentIdx === 0}
-                    onClick={() => setCurrentIdx((c) => c - 1)}
-                    className="px-4 py-2 rounded-xl bg-slate-800 disabled:opacity-40 text-xs font-semibold"
-                  >
-                    Previous
-                  </button>
-                  {currentIdx < activeQuestions.length - 1 ? (
-                    <button
-                      onClick={() => setCurrentIdx((c) => c + 1)}
-                      className="px-5 py-2 rounded-xl bg-indigo-600 text-white text-xs font-semibold"
-                    >
-                      Save & Next
-                    </button>
-                  ) : (
-                    <button
-                      onClick={handleSubmitTest}
-                      className="px-6 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold"
-                    >
-                      Submit Mock Test
-                    </button>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 flex flex-col justify-between">
-              <div>
-                <h4 className="font-bold text-sm text-white mb-3">Question Palette</h4>
-                <div className="grid grid-cols-5 gap-2 max-h-80 overflow-y-auto pr-1">
-                  {activeQuestions.map((_, i) => {
-                    const answered = userAnswers[i] !== undefined;
-                    const marked = markedForReview[i];
-                    let bg = 'bg-slate-950 border-slate-800 text-slate-400';
-                    if (answered) bg = 'bg-emerald-600 text-white border-emerald-500';
-                    if (marked) bg = 'bg-amber-500 text-slate-950 border-amber-400';
-                    return (
-                      <button
-                        key={i}
-                        onClick={() => setCurrentIdx(i)}
-                        className={`h-9 rounded-lg border text-xs font-bold ${bg} ${currentIdx === i ? 'ring-2 ring-indigo-400' : ''}`}
-                      >
-                        {i + 1}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              <button
-                onClick={handleSubmitTest}
-                className="w-full py-3 mt-6 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-sm"
-              >
-                Submit & Save to Vault
-              </button>
-            </div>
-          </div>
-        )}
-
         {activeTab === 'vault' && (
           <div className="space-y-5">
             <div className="flex flex-wrap items-center justify-between gap-3 bg-slate-900 border border-slate-800 p-4 rounded-2xl">
@@ -1661,7 +2088,7 @@ Return ONLY a valid JSON array of objects with these exact keys:
                   <span>AI Automatic Chapter-Wise & Topic-Wise Manager</span>
                 </h2>
                 <p className="text-xs text-slate-400">
-                  AI khud chapters divide karta hai, aur jab aap chahein "Rename Chapter" daba kar apne hisab se naam badal sakte hain.
+                  Har saved mock test ke andar aap questions Remove kar sakte hain aur unka Order (`↑` `↓`) apne hisab se set rakh sakte hain.
                 </p>
               </div>
               <div className="flex flex-wrap gap-2">
@@ -1740,7 +2167,6 @@ Return ONLY a valid JSON array of objects with these exact keys:
                               <button
                                 onClick={() => handleRenameChapterGroup(chapItem.subject, chapItem.chapter)}
                                 className="px-2 py-0.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-amber-300 text-[11px] flex items-center gap-1"
-                                title="Apne hisab se Chapter ya Subject ka naam badlein"
                               >
                                 <Edit3 className="w-3 h-3" /> Rename Chapter
                               </button>
@@ -1841,12 +2267,29 @@ Return ONLY a valid JSON array of objects with these exact keys:
                     <div key={idx} className="bg-slate-900 border border-slate-800 rounded-2xl p-5 flex flex-col justify-between gap-4">
                       <div>
                         <div className="flex items-center justify-between">
-                          <span className="text-xs text-indigo-400 font-semibold">{att.qRange}</span>
-                          <div className="flex items-center gap-2">
-                            <span className="text-xs text-slate-500">{att.dateStr}</span>
+                          <span className="text-xs text-indigo-400 font-semibold">
+                            Set #{idx + 1} • {att.qRange}
+                          </span>
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              disabled={idx === 0}
+                              onClick={() => handleMoveAttemptInVault(idx, idx - 1)}
+                              className="p-1 rounded bg-slate-800 hover:bg-slate-700 disabled:opacity-30 text-slate-300"
+                              title="Move Mock Up"
+                            >
+                              <ArrowUp className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              disabled={idx === savedAttempts.length - 1}
+                              onClick={() => handleMoveAttemptInVault(idx, idx + 1)}
+                              className="p-1 rounded bg-slate-800 hover:bg-slate-700 disabled:opacity-30 text-slate-300"
+                              title="Move Mock Down"
+                            >
+                              <ArrowDown className="w-3.5 h-3.5" />
+                            </button>
                             <button
                               onClick={() => handleDeleteAttempt(att)}
-                              className="text-slate-500 hover:text-rose-400"
+                              className="p-1 rounded bg-slate-800 hover:bg-rose-500/20 text-slate-400 hover:text-rose-400"
                               title="Delete Mock Test"
                             >
                               <Trash2 className="w-3.5 h-3.5" />
@@ -1854,14 +2297,7 @@ Return ONLY a valid JSON array of objects with these exact keys:
                           </div>
                         </div>
                         <h3 className="text-base font-bold text-white mt-1">{att.title}</h3>
-
-                        <div className="flex flex-wrap gap-1.5 mt-2">
-                          {(att.chaptersList || [att.primaryChapter]).filter(Boolean).slice(0, 4).map((ch, ci) => (
-                            <span key={ci} className="px-2 py-0.5 rounded-md bg-slate-950 border border-slate-800 text-[11px] text-emerald-300">
-                              #{ch}
-                            </span>
-                          ))}
-                        </div>
+                        <p className="text-[11px] text-slate-500">{att.dateStr}</p>
 
                         <div className="grid grid-cols-4 gap-2 mt-4 text-center">
                           <div className="p-2 rounded-xl bg-slate-950 border border-slate-800">
@@ -1883,7 +2319,7 @@ Return ONLY a valid JSON array of objects with these exact keys:
                         </div>
                       </div>
 
-                      <div className="flex gap-2">
+                      <div className="flex flex-wrap gap-2">
                         <button
                           onClick={() => {
                             setSelectedAttempt(att);
@@ -1892,7 +2328,16 @@ Return ONLY a valid JSON array of objects with these exact keys:
                           }}
                           className="flex-1 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold"
                         >
-                          Revise & See Mistakes
+                          Detailed Result & Edit Questions
+                        </button>
+                        <button
+                          onClick={() => {
+                            setMockTitle(att.title);
+                            startMockWithQuestions(att.questions);
+                          }}
+                          className="px-3 py-2 rounded-xl bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 text-xs font-semibold"
+                        >
+                          Re-Attempt Full Mock
                         </button>
                         <button
                           onClick={() => {
@@ -1916,134 +2361,369 @@ Return ONLY a valid JSON array of objects with these exact keys:
           </div>
         )}
 
-        {activeTab === 'review' && selectedAttempt && (
-          <div className="space-y-4">
-            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 flex flex-wrap items-center justify-between gap-4">
-              <div>
-                <h2 className="text-lg font-bold text-white">{selectedAttempt.title} — AI Topic Revision Sheet</h2>
-                <p className="text-xs text-slate-400">
-                  Score: <b className="text-white">{selectedAttempt.totalScore}/{selectedAttempt.maxScore}</b> | Correct: {selectedAttempt.correct} | Wrong: {selectedAttempt.wrong} | Skipped: {selectedAttempt.unattempted}
-                </p>
-              </div>
-              <div className="flex gap-2">
-                {['all', 'wrong', 'unattempted', 'correct'].map((f) => (
-                  <button
-                    key={f}
-                    onClick={() => setFilterMode(f)}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-semibold capitalize ${
-                      filterMode === f ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-slate-300'
-                    }`}
-                  >
-                    {f}
-                  </button>
-                ))}
-              </div>
-            </div>
+        {/* ==================================================================== */}
+        {/* DETAILED RESULT SCORECARD + QUESTION REMOVER & ORDER MANAGER         */}
+        {/* ==================================================================== */}
+        {activeTab === 'review' && selectedAttempt && (() => {
+          const totalQs = selectedAttempt.questions?.length || 1;
+          const attemptedQs = (selectedAttempt.correct || 0) + (selectedAttempt.wrong || 0);
+          const accuracyPct = attemptedQs > 0 ? Math.round((selectedAttempt.correct / attemptedQs) * 100) : 0;
+          const scorePct = selectedAttempt.maxScore > 0
+            ? Math.max(0, Math.round((selectedAttempt.totalScore / selectedAttempt.maxScore) * 100))
+            : 0;
+          const posMarksEarned = Number(((selectedAttempt.correct || 0) * (selectedAttempt.positiveMarks || 3)).toFixed(2));
+          const negMarksLost = Number(((selectedAttempt.wrong || 0) * (selectedAttempt.negativeMarks || 1)).toFixed(2));
+          const totalSpentSec = selectedAttempt.totalTimeSpentSec || 0;
+          const avgTimePerQ = totalQs > 0 ? Math.round(totalSpentSec / totalQs) : 0;
 
-            <div className="space-y-4">
-              {selectedAttempt.questions.map((q, idx) => {
-                const uAns = selectedAttempt.userAnswers?.[idx];
-                const isCorrect = uAns === q.correctIndex;
-                const isSkipped = uAns === undefined;
-                const isWrong = !isSkipped && !isCorrect;
+          return (
+            <div className="space-y-6">
+              {/* 1. Executive Result & Analytics Scorecard */}
+              <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-5 shadow-xl">
+                <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-800 pb-4">
+                  <div>
+                    <span className="px-2.5 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 text-xs font-semibold">
+                      Official Detailed Result & Performance Report
+                    </span>
+                    <h2 className="text-xl font-extrabold text-white mt-1.5">
+                      {selectedAttempt.title}
+                    </h2>
+                    <p className="text-xs text-slate-400 mt-0.5">
+                      Attempted on: {selectedAttempt.dateStr} • Total Questions: {totalQs}
+                    </p>
+                  </div>
 
-                if (filterMode === 'wrong' && !isWrong) return null;
-                if (filterMode === 'unattempted' && !isSkipped) return null;
-                if (filterMode === 'correct' && !isCorrect) return null;
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      onClick={() => {
+                        setMockTitle(selectedAttempt.title);
+                        startMockWithQuestions(selectedAttempt.questions);
+                      }}
+                      className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold"
+                    >
+                      ▶ Re-Attempt This Mock (In Current Order)
+                    </button>
+                    <button
+                      onClick={() => setActiveTab('vault')}
+                      className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold"
+                    >
+                      ← Back to Vault
+                    </button>
+                  </div>
+                </div>
 
-                return (
-                  <div key={idx} className="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-3">
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="text-xs font-bold text-indigo-400">Question {idx + 1} (PDF Q.{q.qNum || idx + 1})</span>
-                        {q.subject && (
-                          <span className="px-2 py-0.5 rounded-md bg-indigo-500/15 text-indigo-300 text-[11px]">
-                            {q.subject}
-                          </span>
-                        )}
-                        {q.chapter && (
-                          <span className="px-2 py-0.5 rounded-md bg-emerald-500/15 text-emerald-300 text-[11px]">
-                            Chapter: {q.chapter}
-                          </span>
-                        )}
-                        {q.topic && (
-                          <span className="px-2 py-0.5 rounded-md bg-amber-500/15 text-amber-300 text-[11px]">
-                            Topic: {q.topic}
-                          </span>
-                        )}
-                        <button
-                          onClick={() => handleEditSingleQuestionMeta(idx)}
-                          className="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-amber-300 text-[10px] flex items-center gap-1"
-                        >
-                          <Edit3 className="w-2.5 h-2.5" /> Edit Chapter/Topic
-                        </button>
+                {/* 4 Pillar Analytics Cards */}
+                <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                  {/* Card 1: Final Score & Percentage */}
+                  <div className="p-4 rounded-2xl bg-slate-950 border border-indigo-500/30 flex flex-col justify-between">
+                    <div className="flex items-center justify-between text-xs text-slate-400">
+                      <span>Final Net Score</span>
+                      <Award className="w-4 h-4 text-indigo-400" />
+                    </div>
+                    <div className="my-2">
+                      <span className="text-3xl font-extrabold text-white">{selectedAttempt.totalScore}</span>
+                      <span className="text-sm text-slate-400"> / {selectedAttempt.maxScore}</span>
+                    </div>
+                    <div className="space-y-1">
+                      <div className="flex justify-between text-[11px]">
+                        <span className="text-slate-400">Score Percentage</span>
+                        <span className="font-bold text-indigo-300">{scorePct}%</span>
                       </div>
-                      {isCorrect && <span className="px-2.5 py-1 rounded-full bg-emerald-500/20 text-emerald-300 text-xs font-bold">Correct ✓</span>}
-                      {isWrong && <span className="px-2.5 py-1 rounded-full bg-rose-500/20 text-rose-300 text-xs font-bold">Wrong ✗</span>}
-                      {isSkipped && <span className="px-2.5 py-1 rounded-full bg-slate-800 text-slate-300 text-xs font-bold">Skipped</span>}
-                    </div>
-
-                    {/* Show Cloze Test / RC Passage in Revision Sheet as well */}
-                    {q.passage && (
-                      <div className="p-3.5 rounded-xl bg-slate-950 border border-indigo-500/30 text-xs text-slate-300 whitespace-pre-line leading-relaxed">
-                        <strong className="text-indigo-400 block mb-1">📖 Passage / Cloze Paragraph:</strong>
-                        {q.passage}
-                      </div>
-                    )}
-
-                    <p className="text-sm text-white leading-relaxed whitespace-pre-line">{q.question}</p>
-
-                    <div className="grid sm:grid-cols-2 gap-2">
-                      {q.options.map((opt, oIdx) => {
-                        const isRightOpt = oIdx === q.correctIndex;
-                        const isUserOpt = oIdx === uAns;
-                        let style = 'bg-slate-950 border-slate-800 text-slate-300';
-                        if (isRightOpt) style = 'bg-emerald-500/20 border-emerald-500 text-emerald-200 font-semibold';
-                        else if (isUserOpt && !isRightOpt) style = 'bg-rose-500/20 border-rose-500 text-rose-200 font-semibold';
-
-                        return (
-                          <div
-                            key={oIdx}
-                            onClick={() => updateCorrectOptionInReview(idx, oIdx)}
-                            title="Click to set this option as the official Answer Key"
-                            className={`p-3 rounded-xl border text-xs flex items-center justify-between cursor-pointer hover:border-indigo-400 transition ${style}`}
-                          >
-                            <span>{String.fromCharCode(65 + oIdx)}. {opt}</span>
-                            {isRightOpt && <span>✓ Correct Key</span>}
-                            {isUserOpt && !isRightOpt && <span>✗ Your Answer</span>}
-                          </div>
-                        );
-                      })}
-                    </div>
-
-                    <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 text-xs text-slate-300">
-                      <strong className="text-indigo-400">Solution: </strong> {q.explanation}
-                    </div>
-
-                    <div className="pt-2">
-                      <label className="block text-xs text-amber-400 font-semibold mb-1">Meri Galti Kya Thi? (Personal Revision Note):</label>
-                      <div className="flex gap-2">
-                        <input
-                          type="text"
-                          defaultValue={selectedAttempt.notes?.[idx] || ''}
-                          onChange={(e) => setNoteInput({ ...noteInput, [idx]: e.target.value })}
-                          placeholder="Apni galti ya formula yahan likhein taaki exam se pehle revise kar sakein..."
-                          className="flex-1 px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white"
-                        />
-                        <button
-                          onClick={() => saveMistakeNote(idx, noteInput[idx] ?? selectedAttempt.notes?.[idx] ?? '')}
-                          className="px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-500 text-white text-xs font-semibold"
-                        >
-                          Save Note
-                        </button>
+                      <div className="w-full h-2 rounded-full bg-slate-800 overflow-hidden">
+                        <div className="h-full bg-indigo-500 rounded-full" style={{ width: `${Math.min(100, scorePct)}%` }} />
                       </div>
                     </div>
                   </div>
-                );
-              })}
+
+                  {/* Card 2: Accuracy & Attempt Ratio */}
+                  <div className="p-4 rounded-2xl bg-slate-950 border border-emerald-500/30 flex flex-col justify-between">
+                    <div className="flex items-center justify-between text-xs text-slate-400">
+                      <span>Accuracy & Attempts</span>
+                      <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                    </div>
+                    <div className="my-2">
+                      <span className="text-3xl font-extrabold text-emerald-400">{accuracyPct}%</span>
+                      <span className="text-xs text-slate-400 ml-2">({attemptedQs}/{totalQs} Attempted)</span>
+                    </div>
+                    <div className="space-y-1">
+                      <div className="flex justify-between text-[11px]">
+                        <span className="text-slate-400">Correct: {selectedAttempt.correct}</span>
+                        <span className="text-rose-400">Wrong: {selectedAttempt.wrong}</span>
+                        <span className="text-slate-400">Skipped: {selectedAttempt.unattempted}</span>
+                      </div>
+                      <div className="w-full h-2 rounded-full bg-slate-800 overflow-hidden flex">
+                        <div
+                          className="h-full bg-emerald-500"
+                          style={{ width: `${(selectedAttempt.correct / totalQs) * 100}%` }}
+                        />
+                        <div
+                          className="h-full bg-rose-500"
+                          style={{ width: `${(selectedAttempt.wrong / totalQs) * 100}%` }}
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Card 3: Positive vs Negative Marks Breakdown */}
+                  <div className="p-4 rounded-2xl bg-slate-950 border border-amber-500/30 flex flex-col justify-between">
+                    <div className="flex items-center justify-between text-xs text-slate-400">
+                      <span>Marks Breakdown</span>
+                      <BarChart3 className="w-4 h-4 text-amber-400" />
+                    </div>
+                    <div className="space-y-1.5 my-2 text-xs">
+                      <div className="flex justify-between">
+                        <span className="text-emerald-400">Positive Marks ({selectedAttempt.correct} × +{selectedAttempt.positiveMarks}):</span>
+                        <span className="font-bold text-emerald-300">+{posMarksEarned}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-rose-400">Negative Penalty ({selectedAttempt.wrong} × -{selectedAttempt.negativeMarks}):</span>
+                        <span className="font-bold text-rose-300">-{negMarksLost}</span>
+                      </div>
+                    </div>
+                    <div className="pt-1.5 border-t border-slate-800 flex justify-between text-xs font-bold">
+                      <span className="text-slate-300">Net Total Marks:</span>
+                      <span className="text-white">{selectedAttempt.totalScore}</span>
+                    </div>
+                  </div>
+
+                  {/* Card 4: Time & Speed Analysis */}
+                  <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 flex flex-col justify-between">
+                    <div className="flex items-center justify-between text-xs text-slate-400">
+                      <span>Time & Speed Analysis</span>
+                      <Clock className="w-4 h-4 text-amber-400" />
+                    </div>
+                    <div className="my-2">
+                      <span className="text-2xl font-extrabold text-amber-300">{formatShortTime(totalSpentSec)}</span>
+                      <span className="text-xs text-slate-400 ml-1.5">Total Time</span>
+                    </div>
+                    <div className="text-[11px] text-slate-400 flex justify-between pt-1.5 border-t border-slate-800">
+                      <span>Avg Time / Question:</span>
+                      <span className="text-white font-bold">{avgTimePerQ} sec</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Chapter & Topic Breakdown Table inside Detailed Result */}
+                {selectedAttemptTopicBreakdown.length > 0 && (
+                  <div className="pt-2">
+                    <h3 className="text-xs font-bold text-indigo-300 uppercase tracking-wider mb-2.5">
+                      📊 Topic-Wise Performance Breakdown in This Mock
+                    </h3>
+                    <div className="overflow-x-auto rounded-xl border border-slate-800">
+                      <table className="w-full text-left text-xs">
+                        <thead className="bg-slate-950 text-slate-400 border-b border-slate-800">
+                          <tr>
+                            <th className="py-2.5 px-3">Chapter & Topic</th>
+                            <th className="py-2.5 px-3 text-center">Total Qs</th>
+                            <th className="py-2.5 px-3 text-center text-emerald-400">Correct</th>
+                            <th className="py-2.5 px-3 text-center text-rose-400">Wrong</th>
+                            <th className="py-2.5 px-3 text-center">Skipped</th>
+                            <th className="py-2.5 px-3 text-center">Accuracy</th>
+                            <th className="py-2.5 px-3 text-right">Net Marks</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-800/70 bg-slate-900/50">
+                          {selectedAttemptTopicBreakdown.map((row, rIdx) => {
+                            const rowAtt = row.correct + row.wrong;
+                            const rowAcc = rowAtt > 0 ? Math.round((row.correct / rowAtt) * 100) : 0;
+                            return (
+                              <tr key={rIdx}>
+                                <td className="py-2 px-3 font-medium text-white">
+                                  <span className="text-emerald-300">{row.chapter}</span> — {row.topic}
+                                </td>
+                                <td className="py-2 px-3 text-center">{row.total}</td>
+                                <td className="py-2 px-3 text-center text-emerald-300 font-bold">{row.correct}</td>
+                                <td className="py-2 px-3 text-center text-rose-300 font-bold">{row.wrong}</td>
+                                <td className="py-2 px-3 text-center text-slate-400">{row.skipped}</td>
+                                <td className="py-2 px-3 text-center font-bold">{rowAcc}%</td>
+                                <td className="py-2 px-3 text-right font-bold text-indigo-300">
+                                  {Number(row.marks.toFixed(2))}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* 2. Filter & Question Order / Removal Controls Header */}
+              <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <h3 className="text-sm font-bold text-white">
+                    Questions Review, Order Manager (`↑` `↓`) & Question Remover (`🗑️`)
+                  </h3>
+                  <p className="text-xs text-slate-400">
+                    Kisi bhi question ko upar-niche (`↑` `↓`) set karein, position number badlein (`Move to #`), ya `Remove Q` daba kar mock se hata dein.
+                  </p>
+                </div>
+                <div className="flex gap-2">
+                  {['all', 'wrong', 'unattempted', 'correct'].map((f) => (
+                    <button
+                      key={f}
+                      onClick={() => setFilterMode(f)}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-semibold capitalize ${
+                        filterMode === f ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-slate-300'
+                      }`}
+                    >
+                      {f}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* 3. Question-by-Question Revision Cards with Order & Remove Buttons */}
+              <div className="space-y-4">
+                {selectedAttempt.questions.map((q, idx) => {
+                  const uAns = selectedAttempt.userAnswers?.[idx];
+                  const isCorrect = uAns === q.correctIndex;
+                  const isSkipped = uAns === undefined;
+                  const isWrong = !isSkipped && !isCorrect;
+                  const qSpent = selectedAttempt.questionTimeSpent?.[idx] || 0;
+
+                  if (filterMode === 'wrong' && !isWrong) return null;
+                  if (filterMode === 'unattempted' && !isSkipped) return null;
+                  if (filterMode === 'correct' && !isCorrect) return null;
+
+                  return (
+                    <div key={idx} className="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-3">
+                      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800/80 pb-3">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="px-2.5 py-1 rounded-lg bg-indigo-600 text-white text-xs font-extrabold">
+                            Q.{idx + 1}
+                          </span>
+                          {q.subject && (
+                            <span className="px-2 py-0.5 rounded-md bg-indigo-500/15 text-indigo-300 text-[11px]">
+                              {q.subject}
+                            </span>
+                          )}
+                          {q.chapter && (
+                            <span className="px-2 py-0.5 rounded-md bg-emerald-500/15 text-emerald-300 text-[11px]">
+                              Chapter: {q.chapter}
+                            </span>
+                          )}
+                          {q.topic && (
+                            <span className="px-2 py-0.5 rounded-md bg-amber-500/15 text-amber-300 text-[11px]">
+                              Topic: {q.topic}
+                            </span>
+                          )}
+                          <button
+                            onClick={() => handleEditSingleQuestionMeta(idx)}
+                            className="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-amber-300 text-[10px] flex items-center gap-1"
+                          >
+                            <Edit3 className="w-2.5 h-2.5" /> Edit Topic
+                          </button>
+                        </div>
+
+                        {/* Question Reorder & Remove Toolbar */}
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <span className="text-[11px] text-slate-400 mr-1 font-mono">
+                            ⏱ {formatShortTime(qSpent)}
+                          </span>
+
+                          <button
+                            disabled={idx === 0}
+                            onClick={() => handleMoveQuestionInSavedMock(idx, idx - 1)}
+                            title="Is Question ko Upar (Up) karein"
+                            className="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 disabled:opacity-30 text-slate-200 text-xs flex items-center gap-0.5"
+                          >
+                            <ArrowUp className="w-3.5 h-3.5" /> Up
+                          </button>
+
+                          <button
+                            disabled={idx === selectedAttempt.questions.length - 1}
+                            onClick={() => handleMoveQuestionInSavedMock(idx, idx + 1)}
+                            title="Is Question ko Niche (Down) karein"
+                            className="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 disabled:opacity-30 text-slate-200 text-xs flex items-center gap-0.5"
+                          >
+                            <ArrowDown className="w-3.5 h-3.5" /> Down
+                          </button>
+
+                          <button
+                            onClick={() => handleJumpQuestionPosition(idx)}
+                            title="Kisi bhi question number par set karein"
+                            className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-indigo-600 text-indigo-300 hover:text-white text-xs font-semibold"
+                          >
+                            Move to #
+                          </button>
+
+                          <button
+                            onClick={() => handleRemoveQuestionFromSavedMock(idx)}
+                            title="Is Question ko Saved Mock se Remove karein"
+                            className="px-2.5 py-1 rounded-lg bg-rose-500/15 hover:bg-rose-600 text-rose-300 hover:text-white text-xs font-semibold flex items-center gap-1"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" /> Remove Q
+                          </button>
+
+                          {isCorrect && <span className="px-2.5 py-1 rounded-full bg-emerald-500/20 text-emerald-300 text-xs font-bold">Correct ✓</span>}
+                          {isWrong && <span className="px-2.5 py-1 rounded-full bg-rose-500/20 text-rose-300 text-xs font-bold">Wrong ✗</span>}
+                          {isSkipped && <span className="px-2.5 py-1 rounded-full bg-slate-800 text-slate-300 text-xs font-bold">Skipped</span>}
+                        </div>
+                      </div>
+
+                      {q.passage && (
+                        <div className="p-3.5 rounded-xl bg-slate-950 border border-indigo-500/30 text-xs text-slate-300 whitespace-pre-line leading-relaxed">
+                          <strong className="text-indigo-400 block mb-1">📖 Passage / Cloze Paragraph:</strong>
+                          {q.passage}
+                        </div>
+                      )}
+
+                      <p className="text-sm text-white leading-relaxed whitespace-pre-line">{q.question}</p>
+
+                      <div className="grid sm:grid-cols-2 gap-2">
+                        {q.options.map((opt, oIdx) => {
+                          const isRightOpt = oIdx === q.correctIndex;
+                          const isUserOpt = oIdx === uAns;
+                          let style = 'bg-slate-950 border-slate-800 text-slate-300';
+                          if (isRightOpt) style = 'bg-emerald-500/20 border-emerald-500 text-emerald-200 font-semibold';
+                          else if (isUserOpt && !isRightOpt) style = 'bg-rose-500/20 border-rose-500 text-rose-200 font-semibold';
+
+                          return (
+                            <div
+                              key={oIdx}
+                              onClick={() => updateCorrectOptionInReview(idx, oIdx)}
+                              title="Click to set this option as the official Answer Key"
+                              className={`p-3 rounded-xl border text-xs flex items-center justify-between cursor-pointer hover:border-indigo-400 transition ${style}`}
+                            >
+                              <span>{String.fromCharCode(65 + oIdx)}. {opt}</span>
+                              {isRightOpt && <span>✓ Correct Key</span>}
+                              {isUserOpt && !isRightOpt && <span>✗ Your Answer</span>}
+                            </div>
+                          );
+                        })}
+                      </div>
+
+                      <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 text-xs text-slate-300">
+                        <strong className="text-indigo-400">Solution: </strong> {q.explanation}
+                      </div>
+
+                      <div className="pt-2">
+                        <label className="block text-xs text-amber-400 font-semibold mb-1">Meri Galti Kya Thi? (Personal Revision Note):</label>
+                        <div className="flex gap-2">
+                          <input
+                            type="text"
+                            defaultValue={selectedAttempt.notes?.[idx] || ''}
+                            onChange={(e) => setNoteInput({ ...noteInput, [idx]: e.target.value })}
+                            placeholder="Apni galti ya formula yahan likhein taaki exam se pehle revise kar sakein..."
+                            className="flex-1 px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white"
+                          />
+                          <button
+                            onClick={() => saveMistakeNote(idx, noteInput[idx] ?? selectedAttempt.notes?.[idx] ?? '')}
+                            className="px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-500 text-white text-xs font-semibold"
+                          >
+                            Save Note
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
-          </div>
-        )}
+          );
+        })()}
       </main>
     </div>
   );
