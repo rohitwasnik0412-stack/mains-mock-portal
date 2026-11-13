@@ -26,7 +26,7 @@ import {
   RefreshCw, Edit3, Trash2, FileText, ArrowUp, ArrowDown,
   ZoomIn, ZoomOut, Pause, Play, Maximize2, Award, BarChart3,
   CheckCircle2, Home, ArrowLeft, Globe, Hash, Lock, Unlock,
-  Video, ShieldCheck, PlusCircle, ExternalLink, CreditCard
+  Video, ShieldCheck, PlusCircle, ExternalLink, CreditCard, Flag
 } from 'lucide-react';
 
 const COMPUTER_COURSE_QUESTIONS = [
@@ -594,7 +594,6 @@ export default function App() {
     const rzpKey = (paymentSettings.razorpayKeyId || '').trim();
 
     if (!rzpKey) {
-      // Open Interactive Gateway Simulator so user can test 1-Second Auto-Unlock without waiting for Razorpay KYC
       setShowGatewaySimulator(true);
       return;
     }
@@ -1146,6 +1145,16 @@ Return ONLY a valid JSON array of objects with these exact keys:
     );
   };
 
+  const toggleMarkForReviewInActiveTest = (idx, moveNext = false) => {
+    setMarkedForReview((prev) => ({
+      ...prev,
+      [idx]: moveNext ? true : !prev[idx]
+    }));
+    if (moveNext && idx < activeQuestions.length - 1) {
+      navigateToQuestion(idx + 1);
+    }
+  };
+
   const toggleOptionStrikeOut = (qIdx, oIdx, e) => {
     e.stopPropagation();
     setEliminatedOptions((prev) => {
@@ -1248,6 +1257,7 @@ Return ONLY a valid JSON array of objects with these exact keys:
       unattempted,
       questions: activeQuestions,
       userAnswers,
+      markedForReview: markedForReview || {},
       notes: {},
       aiAnalysis: {}
     };
@@ -1276,7 +1286,15 @@ Return ONLY a valid JSON array of objects with these exact keys:
     navigateScreen('review', { selectedAttempt: attemptRecord, filterMode: 'all' });
   };
 
-  const recalculateAndSaveAttempt = async (baseAttempt, newQuestions, newAnswers, newNotes, newTimeSpent, newAiAnalysis = null) => {
+  const recalculateAndSaveAttempt = async (
+    baseAttempt,
+    newQuestions,
+    newAnswers,
+    newNotes,
+    newTimeSpent,
+    newAiAnalysis = null,
+    newMarkedForReview = null
+  ) => {
     let correct = 0, wrong = 0, unattempted = 0;
     const subjectsSet = new Set();
     const chaptersSet = new Set();
@@ -1306,6 +1324,7 @@ Return ONLY a valid JSON array of objects with these exact keys:
       notes: newNotes,
       questionTimeSpent: newTimeSpent,
       aiAnalysis: newAiAnalysis !== null ? newAiAnalysis : (baseAttempt.aiAnalysis || {}),
+      markedForReview: newMarkedForReview !== null ? newMarkedForReview : (baseAttempt.markedForReview || {}),
       correct,
       wrong,
       unattempted,
@@ -1330,6 +1349,7 @@ Return ONLY a valid JSON array of objects with these exact keys:
           notes: newNotes,
           questionTimeSpent: newTimeSpent,
           aiAnalysis: updatedAttempt.aiAnalysis,
+          markedForReview: updatedAttempt.markedForReview,
           correct,
           wrong,
           unattempted,
@@ -1356,6 +1376,24 @@ Return ONLY a valid JSON array of objects with these exact keys:
       selectedAttempt.userAnswers || {},
       selectedAttempt.notes || {},
       selectedAttempt.questionTimeSpent || {}
+    );
+  };
+
+  const toggleMarkForReviewInReview = async (qIdx) => {
+    if (!selectedAttempt) return;
+    const currMap = selectedAttempt.markedForReview || {};
+    const updatedMarked = {
+      ...currMap,
+      [qIdx]: !currMap[qIdx]
+    };
+    await recalculateAndSaveAttempt(
+      selectedAttempt,
+      selectedAttempt.questions,
+      selectedAttempt.userAnswers || {},
+      selectedAttempt.notes || {},
+      selectedAttempt.questionTimeSpent || {},
+      null,
+      updatedMarked
     );
   };
 
@@ -1546,6 +1584,7 @@ Include these exact 5 sections clearly formatted:
     const newNotes = {};
     const newTimeSpent = {};
     const newAiAnalysis = {};
+    const newMarked = {};
 
     selectedAttempt.questions.forEach((q, i) => {
       if (i === qIdx) return;
@@ -1567,9 +1606,12 @@ Include these exact 5 sections clearly formatted:
       if (selectedAttempt.aiAnalysis?.[i] !== undefined) {
         newAiAnalysis[newIndex] = selectedAttempt.aiAnalysis[i];
       }
+      if (selectedAttempt.markedForReview?.[i] !== undefined) {
+        newMarked[newIndex] = selectedAttempt.markedForReview[i];
+      }
     });
 
-    await recalculateAndSaveAttempt(selectedAttempt, newQuestions, newAnswers, newNotes, newTimeSpent, newAiAnalysis);
+    await recalculateAndSaveAttempt(selectedAttempt, newQuestions, newAnswers, newNotes, newTimeSpent, newAiAnalysis, newMarked);
   };
 
   const handleMoveQuestionInSavedMock = async (fromIdx, toIdx, customOrderTitle = null) => {
@@ -1582,7 +1624,8 @@ Include these exact 5 sections clearly formatted:
       ans: selectedAttempt.userAnswers?.[i],
       note: selectedAttempt.notes?.[i],
       time: selectedAttempt.questionTimeSpent?.[i],
-      ai: selectedAttempt.aiAnalysis?.[i]
+      ai: selectedAttempt.aiAnalysis?.[i],
+      marked: selectedAttempt.markedForReview?.[i]
     }));
 
     if (fromIdx !== toIdx) {
@@ -1595,6 +1638,7 @@ Include these exact 5 sections clearly formatted:
     const newNotes = {};
     const newTimeSpent = {};
     const newAiAnalysis = {};
+    const newMarked = {};
 
     itemBundle.forEach((bundle, newIdx) => {
       newQuestions.push({
@@ -1605,9 +1649,10 @@ Include these exact 5 sections clearly formatted:
       if (bundle.note !== undefined) newNotes[newIdx] = bundle.note;
       if (bundle.time !== undefined) newTimeSpent[newIdx] = bundle.time;
       if (bundle.ai !== undefined) newAiAnalysis[newIdx] = bundle.ai;
+      if (bundle.marked !== undefined) newMarked[newIdx] = bundle.marked;
     });
 
-    await recalculateAndSaveAttempt(selectedAttempt, newQuestions, newAnswers, newNotes, newTimeSpent, newAiAnalysis);
+    await recalculateAndSaveAttempt(selectedAttempt, newQuestions, newAnswers, newNotes, newTimeSpent, newAiAnalysis, newMarked);
   };
 
   const handleCustomOrderAndRenameQuestion = async (fromIdx) => {
@@ -2402,6 +2447,7 @@ Include these exact 5 sections clearly formatted:
     const tParts = getTimerParts(timeLeft);
     const currQ = activeQuestions[currentIdx];
     const currSpentSec = questionTimeSpent[currentIdx] || 0;
+    const isCurrMarked = !!markedForReview[currentIdx];
     const localizedPassage = getLocalizedPassageText(currQ, testLang);
     const localizedQuestion = getLocalizedQuestionText(currQ, testLang);
 
@@ -2483,15 +2529,13 @@ Include these exact 5 sections clearly formatted:
 
           <div className="flex flex-wrap items-center gap-2.5">
             <button
-              onClick={() => {
-                setMarkedForReview({ ...markedForReview, [currentIdx]: !markedForReview[currentIdx] });
-                if (currentIdx < activeQuestions.length - 1) {
-                  navigateToQuestion(currentIdx + 1);
-                }
-              }}
-              className="px-5 py-2 rounded-md bg-[#2e2a85] hover:bg-[#231f6b] text-white text-xs font-bold shadow-sm transition"
+              onClick={() => toggleMarkForReviewInActiveTest(currentIdx, true)}
+              className={`px-5 py-2 rounded-md text-white text-xs font-bold shadow-sm transition flex items-center gap-1.5 ${
+                isCurrMarked ? 'bg-purple-700 hover:bg-purple-800' : 'bg-[#2e2a85] hover:bg-[#231f6b]'
+              }`}
             >
-              {markedForReview[currentIdx] ? 'Unmark Review' : 'Mark For Review'}
+              <Flag className="w-3.5 h-3.5" />
+              {isCurrMarked ? 'Marked For Review (Next →)' : 'Mark For Review & Next'}
             </button>
 
             <button
@@ -2507,7 +2551,7 @@ Include these exact 5 sections clearly formatted:
 
             <button
               onClick={handleSubmitTest}
-              className="px-5 py-2 rounded-md bg-[#2e2a85] hover:bg-emerald-700 text-white text-xs font-bold shadow-sm transition"
+              className="px-5 py-2 rounded-md bg-[#0a7c2f] hover:bg-emerald-700 text-white text-xs font-bold shadow-sm transition"
             >
               Submit Test
             </button>
@@ -2531,13 +2575,21 @@ Include these exact 5 sections clearly formatted:
 
         <div className="flex-1 flex flex-col lg:flex-row overflow-hidden">
           <div className="flex-1 p-4 md:p-6 overflow-y-auto relative">
-            <div className="flex items-center justify-between mb-3">
+            <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
               <h2 className="text-base font-extrabold text-slate-900">{mockTitle}</h2>
-              <div className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
-                <span>Total Answered :</span>
-                <span className="px-2 py-0.5 rounded bg-amber-100 text-amber-900 font-extrabold">
-                  {cbtPaletteCounts.answered + cbtPaletteCounts.markedAndAnswered}
-                </span>
+              <div className="flex items-center gap-3 text-xs font-bold text-slate-700">
+                <div className="flex items-center gap-1.5">
+                  <span>Total Answered :</span>
+                  <span className="px-2 py-0.5 rounded bg-emerald-100 text-emerald-900 font-extrabold">
+                    {cbtPaletteCounts.answered + cbtPaletteCounts.markedAndAnswered}
+                  </span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <span>Marked for Review :</span>
+                  <span className="px-2 py-0.5 rounded bg-purple-100 text-purple-900 font-extrabold">
+                    {cbtPaletteCounts.markedOnly + cbtPaletteCounts.markedAndAnswered}
+                  </span>
+                </div>
               </div>
             </div>
 
@@ -2546,7 +2598,7 @@ Include these exact 5 sections clearly formatted:
               style={{ fontSize: `${zoomScale}%` }}
             >
               <div className="flex flex-wrap items-center justify-between gap-2 pb-4 mb-5 border-b border-slate-100">
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <span className="text-sm font-extrabold text-slate-900">
                     Question No. {currentIdx + 1}
                   </span>
@@ -2555,9 +2607,14 @@ Include these exact 5 sections clearly formatted:
                       {currQ.topic}
                     </span>
                   )}
+                  {isCurrMarked && (
+                    <span className="px-2.5 py-0.5 rounded-full bg-purple-100 text-purple-800 border border-purple-300 text-[11px] font-extrabold flex items-center gap-1">
+                      🚩 Marked for Review
+                    </span>
+                  )}
                 </div>
 
-                <div className="flex items-center gap-2.5">
+                <div className="flex flex-wrap items-center gap-2">
                   <div className="flex items-center gap-1 text-slate-700 text-xs font-mono font-bold">
                     <Clock className="w-3.5 h-3.5 text-slate-500" />
                     <span>{formatShortTime(currSpentSec)}</span>
@@ -2577,6 +2634,20 @@ Include these exact 5 sections clearly formatted:
                   </select>
 
                   <button
+                    type="button"
+                    onClick={() => toggleMarkForReviewInActiveTest(currentIdx, false)}
+                    className={`px-3 py-1 rounded-full text-xs font-bold border transition flex items-center gap-1 ${
+                      isCurrMarked
+                        ? 'bg-purple-600 text-white border-purple-700 shadow-sm'
+                        : 'bg-purple-50 text-purple-800 border-purple-200 hover:bg-purple-100'
+                    }`}
+                  >
+                    <Flag className="w-3 h-3" />
+                    {isCurrMarked ? 'Marked ✓' : 'Mark Review'}
+                  </button>
+
+                  <button
+                    type="button"
                     onClick={() => toggleStarInActiveTest(currentIdx)}
                     className={`px-2.5 py-1 rounded-full text-xs font-bold border transition ${
                       currQ.starred
@@ -2659,16 +2730,42 @@ Include these exact 5 sections clearly formatted:
               </div>
 
               <div className="flex flex-wrap items-center justify-between gap-3 pt-6 mt-6 border-t border-slate-100">
-                <button
-                  onClick={() => {
-                    const copy = { ...userAnswers };
-                    delete copy[currentIdx];
-                    setUserAnswers(copy);
-                  }}
-                  className="px-4 py-2 rounded-lg border border-slate-300 hover:bg-slate-100 text-slate-700 text-xs font-bold"
-                >
-                  Clear Response
-                </button>
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const copy = { ...userAnswers };
+                      delete copy[currentIdx];
+                      setUserAnswers(copy);
+                    }}
+                    className="px-4 py-2 rounded-lg border border-slate-300 hover:bg-slate-100 text-slate-700 text-xs font-bold"
+                  >
+                    Clear Response
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => toggleMarkForReviewInActiveTest(currentIdx, true)}
+                    className={`px-4 py-2 rounded-lg text-xs font-bold flex items-center gap-1.5 shadow-sm transition ${
+                      isCurrMarked
+                        ? 'bg-purple-700 hover:bg-purple-800 text-white'
+                        : 'bg-purple-600 hover:bg-purple-700 text-white'
+                    }`}
+                  >
+                    <Flag className="w-3.5 h-3.5" />
+                    🚩 Mark for Review & Next
+                  </button>
+
+                  {isCurrMarked && (
+                    <button
+                      type="button"
+                      onClick={() => toggleMarkForReviewInActiveTest(currentIdx, false)}
+                      className="px-3 py-2 rounded-lg border border-purple-300 bg-purple-50 hover:bg-purple-100 text-purple-800 text-xs font-bold"
+                    >
+                      Unmark Review
+                    </button>
+                  )}
+                </div>
 
                 <div className="flex items-center gap-2">
                   <button
@@ -2721,7 +2818,7 @@ Include these exact 5 sections clearly formatted:
                       if (hasAns && isMark) {
                         pillStyle = 'bg-yellow-400 text-slate-950';
                       } else if (isMark) {
-                        pillStyle = 'bg-red-600 text-white';
+                        pillStyle = 'bg-purple-600 text-white';
                       } else if (hasAns) {
                         pillStyle = 'bg-[#0a7c2f] text-white';
                       }
@@ -2763,8 +2860,8 @@ Include these exact 5 sections clearly formatted:
                     </span>
                   </div>
                   <div className="flex items-center justify-between">
-                    <span>Marked</span>
-                    <span className="px-3 py-1 rounded-full bg-red-600 text-white font-bold">
+                    <span>Marked for Review</span>
+                    <span className="px-3 py-1 rounded-full bg-purple-600 text-white font-bold">
                       {String(cbtPaletteCounts.markedOnly).padStart(2, '0')}
                     </span>
                   </div>
@@ -2938,7 +3035,6 @@ Include these exact 5 sections clearly formatted:
               </button>
             </div>
 
-            {/* Method A: Razorpay Automatic Payment Gateway (1-Second Auto-Unlock) */}
             <div className="p-4 rounded-xl bg-gradient-to-br from-indigo-950/90 to-slate-950 border border-indigo-500/50 space-y-3">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-bold text-indigo-300 flex items-center gap-1.5">
@@ -2960,7 +3056,6 @@ Include these exact 5 sections clearly formatted:
               </button>
             </div>
 
-            {/* Method B: Direct UPI + WhatsApp + Secret Unlock Code Backup */}
             <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-2.5">
               <div className="text-xs font-bold text-slate-300 flex items-center justify-between">
                 <span>Method 2: Direct UPI ID & Unlock Code</span>
@@ -4162,6 +4257,7 @@ Include these exact 5 sections clearly formatted:
           const negMarksLost = Number(((selectedAttempt.wrong || 0) * (selectedAttempt.negativeMarks || 1)).toFixed(2));
           const totalSpentSec = selectedAttempt.totalTimeSpentSec || 0;
           const avgTimePerQ = totalQs > 0 ? Math.round(totalSpentSec / totalQs) : 0;
+          const markedReviewCount = Object.values(selectedAttempt.markedForReview || {}).filter(Boolean).length;
 
           return (
             <div className="space-y-6">
@@ -4181,7 +4277,7 @@ Include these exact 5 sections clearly formatted:
                     </div>
                     <h2 className="text-xl font-extrabold text-white mt-2">{selectedAttempt.title}</h2>
                     <p className="text-xs text-slate-400 mt-0.5">
-                      Attempted on: {selectedAttempt.dateStr} • Total Questions: {totalQs}
+                      Attempted on: {selectedAttempt.dateStr} • Total Questions: {totalQs} • Marked for Review: {markedReviewCount}
                     </p>
                   </div>
 
@@ -4319,15 +4415,22 @@ Include these exact 5 sections clearly formatted:
                   Filter Questions & Manage Order (`↑` `↓` / `Set Order` / `Remove Q`):
                 </div>
                 <div className="flex flex-wrap gap-2">
-                  {['all', 'wrong', 'unattempted', 'correct', 'starred'].map((f) => (
+                  {[
+                    { id: 'all', label: 'All' },
+                    { id: 'wrong', label: 'Wrong ✗' },
+                    { id: 'unattempted', label: 'Unattempted' },
+                    { id: 'correct', label: 'Correct ✓' },
+                    { id: 'marked', label: `🚩 Marked for Review (${markedReviewCount})` },
+                    { id: 'starred', label: '★ Starred' }
+                  ].map((f) => (
                     <button
-                      key={f}
-                      onClick={() => setFilterMode(f)}
-                      className={`px-3 py-1.5 rounded-xl text-xs font-semibold capitalize ${
-                        filterMode === f ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-slate-300'
+                      key={f.id}
+                      onClick={() => setFilterMode(f.id)}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition ${
+                        filterMode === f.id ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
                       }`}
                     >
-                      {f === 'starred' ? '★ Starred' : f}
+                      {f.label}
                     </button>
                   ))}
                 </div>
@@ -4339,6 +4442,7 @@ Include these exact 5 sections clearly formatted:
                   const isCorrect = uAns === q.correctIndex;
                   const isSkipped = uAns === undefined;
                   const isWrong = !isSkipped && !isCorrect;
+                  const isMarked = !!selectedAttempt.markedForReview?.[idx];
                   const qSpent = selectedAttempt.questionTimeSpent?.[idx] || 0;
                   const savedAiCoachNote = selectedAttempt.aiAnalysis?.[idx] || '';
                   const isAiLoading = !!aiLoadingMap[idx];
@@ -4346,6 +4450,7 @@ Include these exact 5 sections clearly formatted:
                   if (filterMode === 'wrong' && !isWrong) return null;
                   if (filterMode === 'unattempted' && !isSkipped) return null;
                   if (filterMode === 'correct' && !isCorrect) return null;
+                  if (filterMode === 'marked' && !isMarked) return null;
                   if (filterMode === 'starred' && !q.starred) return null;
 
                   const revPassage = getLocalizedPassageText(q, testLang);
@@ -4359,6 +4464,15 @@ Include these exact 5 sections clearly formatted:
                           <span className="px-2.5 py-1 rounded-lg bg-indigo-600 text-white text-xs font-extrabold">
                             Order #{idx + 1} ({q.customLabel || `Q.${idx + 1}`})
                           </span>
+                          <button
+                            onClick={() => toggleMarkForReviewInReview(idx)}
+                            className={`px-2.5 py-1 rounded-lg text-xs font-bold flex items-center gap-1 ${
+                              isMarked ? 'bg-purple-600 text-white' : 'bg-slate-800 text-purple-300'
+                            }`}
+                          >
+                            <Flag className="w-3 h-3" />
+                            {isMarked ? '🚩 Marked Review' : 'Mark Review'}
+                          </button>
                           <button
                             onClick={() => toggleStarInReview(idx)}
                             className={`px-2.5 py-1 rounded-lg text-xs font-bold ${
