@@ -26,8 +26,13 @@ import {
   RefreshCw, Edit3, Trash2, FileText, ArrowUp, ArrowDown,
   ZoomIn, ZoomOut, Pause, Play, Maximize2, Award, BarChart3,
   CheckCircle2, Home, ArrowLeft, Globe, Hash, Lock, Unlock,
-  Video, ShieldCheck, PlusCircle, ExternalLink, CreditCard, Flag
+  Video, ShieldCheck, PlusCircle, ExternalLink, CreditCard,
+  Share2, Users, Megaphone
 } from 'lucide-react';
+
+// Official Admin Credentials
+const ADMIN_MASTER_ID = "Iamrt@04129753614602";
+const ADMIN_MASTER_PASS = "AAOROHITWASNIK288154323";
 
 const COMPUTER_COURSE_QUESTIONS = [
   {
@@ -239,11 +244,23 @@ export default function App() {
   const [authSuccess, setAuthSuccess] = useState('');
   const [recoveredPassBox, setRecoveredPassBox] = useState('');
 
+  // Dedicated Admin Portal Authentication States
+  const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(() => {
+    return sessionStorage.getItem('is_rohit_admin_unlocked') === 'true';
+  });
+  const [adminLoginId, setAdminLoginId] = useState('');
+  const [adminLoginPass, setAdminLoginPass] = useState('');
+  const [adminLoginError, setAdminLoginError] = useState('');
+
+  // Global Shared Mocks (Mocks shared by Admin with all logged-in students)
+  const [sharedCommunityMocks, setSharedCommunityMocks] = useState([]);
+  const [isSharingMock, setIsSharingMock] = useState(false);
+
   const [geminiKey, setGeminiKey] = useState(() => localStorage.getItem('gemini_api_key') || '');
   const [showKeyModal, setShowKeyModal] = useState(false);
   const [cloudSyncStatus, setCloudSyncStatus] = useState('Checking Cloud Sync...');
 
-  const [activeTab, setActiveTab] = useState('home');
+  const [activeTab, setActiveTab] = useState('home'); // 'home' | 'shared' | 'courses' | 'create' | 'pretest' | 'test' | 'vault' | 'review' | 'admin'
   const [vaultViewMode, setVaultViewMode] = useState('chapters');
   const [selectedSubjectFilter, setSelectedSubjectFilter] = useState('All');
   const [selectedAttempt, setSelectedAttempt] = useState(null);
@@ -251,7 +268,6 @@ export default function App() {
   const [navStack, setNavStack] = useState([]);
   const isPoppingRef = useRef(false);
 
-  // Course, Razorpay Gateway & Legal Policy States
   const [coursesList, setCoursesList] = useState(() => {
     try {
       const saved = localStorage.getItem('portal_courses_list');
@@ -273,7 +289,7 @@ export default function App() {
   });
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [showGatewaySimulator, setShowGatewaySimulator] = useState(false);
-  const [activeLegalPolicyModal, setActiveLegalPolicyModal] = useState(null); // 'terms' | 'privacy' | 'refund' | 'contact' | null
+  const [activeLegalPolicyModal, setActiveLegalPolicyModal] = useState(null);
   const [unlockCodeInput, setUnlockCodeInput] = useState('');
   const [paymentSettings, setPaymentSettings] = useState(() => {
     try {
@@ -463,6 +479,7 @@ export default function App() {
       setAuthLoading(false);
       if (currentUser) {
         syncAndLoadUserAttempts(currentUser);
+        loadSharedMocksForAllUsers();
       } else {
         setSavedAttempts([]);
       }
@@ -486,6 +503,100 @@ export default function App() {
     }, 1000);
     return () => clearInterval(timer);
   }, [testRunning, isPaused, timeLeft, currentIdx]);
+
+  // Load all Mocks shared by Admin so every logged-in user can see & attempt them!
+  const loadSharedMocksForAllUsers = async () => {
+    try {
+      const snap = await getDocs(collection(db, 'sharedMocks'));
+      const list = snap.docs.map(d => ({ sharedDocId: d.id, ...d.data() }));
+      list.sort((a, b) => (b.sharedAt || 0) - (a.sharedAt || 0));
+      setSharedCommunityMocks(list);
+      localStorage.setItem('shared_community_mocks', JSON.stringify(list));
+    } catch (e) {
+      try {
+        const localShared = localStorage.getItem('shared_community_mocks');
+        if (localShared) setSharedCommunityMocks(JSON.parse(localShared));
+      } catch {
+        // Ignore
+      }
+    }
+  };
+
+  // Admin Function: Share any Mock Test with ALL Logged-in Users on the Portal
+  const handleShareMockWithAllUsers = async (attemptObj) => {
+    if (!attemptObj || !attemptObj.questions?.length) return;
+    setIsSharingMock(true);
+
+    const customShareTitle = window.prompt(
+      'Sabhi logged-in students ke liye is Shared Mock ka naam kya dikhana chahte hain?',
+      attemptObj.title
+    );
+    if (!customShareTitle) {
+      setIsSharingMock(false);
+      return;
+    }
+
+    const sharedPayload = {
+      title: customShareTitle.trim(),
+      sharedBy: 'Admin (Rohit Kumar Wasnik)',
+      primarySubject: attemptObj.primarySubject || 'General Studies',
+      primaryChapter: attemptObj.primaryChapter || 'Mixed Practice',
+      qCount: attemptObj.questions.length,
+      durationMins: attemptObj.durationMins || 20,
+      positiveMarks: attemptObj.positiveMarks || 3,
+      negativeMarks: attemptObj.negativeMarks || 1,
+      questions: attemptObj.questions,
+      sharedDateStr: new Date().toLocaleString('en-IN'),
+      sharedAt: Date.now()
+    };
+
+    try {
+      const docRef = await addDoc(collection(db, 'sharedMocks'), sharedPayload);
+      const withId = { ...sharedPayload, sharedDocId: docRef.id };
+      const updated = [withId, ...sharedCommunityMocks];
+      setSharedCommunityMocks(updated);
+      localStorage.setItem('shared_community_mocks', JSON.stringify(updated));
+      alert(`🎉 "${customShareTitle}" ab aapke portal ke sabhi Logged-In Users ke liye Live Share ho gaya hai!`);
+    } catch (err) {
+      const updated = [sharedPayload, ...sharedCommunityMocks];
+      setSharedCommunityMocks(updated);
+      localStorage.setItem('shared_community_mocks', JSON.stringify(updated));
+      alert('Mock shared locally! (Ensure Firestore rules allow sharedMocks read/write).');
+    } finally {
+      setIsSharingMock(false);
+    }
+  };
+
+  const handleDeleteSharedMockFromAdmin = async (sharedItem) => {
+    if (!window.confirm(`Kya aap "${sharedItem.title}" ko Shared Live Mocks se hatana chahte hain?`)) return;
+    const filtered = sharedCommunityMocks.filter(m => m.sharedAt !== sharedItem.sharedAt);
+    setSharedCommunityMocks(filtered);
+    localStorage.setItem('shared_community_mocks', JSON.stringify(filtered));
+    if (sharedItem.sharedDocId) {
+      try {
+        await deleteDoc(doc(db, 'sharedMocks', sharedItem.sharedDocId));
+      } catch (e) {
+        console.error(e);
+      }
+    }
+  };
+
+  // Verify Dedicated Admin Login Credentials
+  const handleAdminPortalLogin = (e) => {
+    e.preventDefault();
+    setAdminLoginError('');
+    if (
+      adminLoginId.trim() === ADMIN_MASTER_ID &&
+      adminLoginPass.trim() === ADMIN_MASTER_PASS
+    ) {
+      setIsAdminAuthenticated(true);
+      sessionStorage.setItem('is_rohit_admin_unlocked', 'true');
+      setAdminLoginId('');
+      setAdminLoginPass('');
+    } else {
+      setAdminLoginError('❌ Invalid Admin ID or Password! Sirf Authorized Admin hi login kar sakte hain.');
+    }
+  };
 
   const sortAttemptsByOrder = (list) => {
     return [...list].sort((a, b) => {
@@ -560,7 +671,6 @@ export default function App() {
     }
   };
 
-  // Unlock Course via Secret Code OR Automatic Razorpay Payment ID
   const handleUnlockCourseWithCode = async (courseId, directBypass = false, paymentId = '') => {
     const cleanInput = unlockCodeInput.trim().toUpperCase();
     const masterCode = (paymentSettings.masterUnlockCode || 'ROHITPRO').toUpperCase();
@@ -589,7 +699,6 @@ export default function App() {
     }
   };
 
-  // Automatic Razorpay Payment Gateway Integration (+ Built-in Sandbox Simulator if no Key is set yet)
   const startRazorpayAutoPayment = (course) => {
     const rzpKey = (paymentSettings.razorpayKeyId || '').trim();
 
@@ -705,6 +814,25 @@ export default function App() {
     setAuthError('');
     setAuthSuccess('');
     setRecoveredPassBox('');
+
+    // If user logs in directly with Master Admin ID & Password on the main login screen
+    if (email.trim() === ADMIN_MASTER_ID && password.trim() === ADMIN_MASTER_PASS) {
+      setIsAdminAuthenticated(true);
+      sessionStorage.setItem('is_rohit_admin_unlocked', 'true');
+      const adminEmail = 'iamrt04129753614602@mockportal.app';
+      try {
+        await signInWithEmailAndPassword(auth, adminEmail, ADMIN_MASTER_PASS);
+      } catch {
+        try {
+          const res = await createUserWithEmailAndPassword(auth, adminEmail, ADMIN_MASTER_PASS);
+          await updateProfile(res.user, { displayName: 'Admin Rohit Kumar Wasnik' });
+        } catch (err) {
+          setAuthError(err.message);
+        }
+      }
+      setActiveTab('admin');
+      return;
+    }
 
     const formattedEmail = formatUserEmail(email);
 
@@ -1145,16 +1273,6 @@ Return ONLY a valid JSON array of objects with these exact keys:
     );
   };
 
-  const toggleMarkForReviewInActiveTest = (idx, moveNext = false) => {
-    setMarkedForReview((prev) => ({
-      ...prev,
-      [idx]: moveNext ? true : !prev[idx]
-    }));
-    if (moveNext && idx < activeQuestions.length - 1) {
-      navigateToQuestion(idx + 1);
-    }
-  };
-
   const toggleOptionStrikeOut = (qIdx, oIdx, e) => {
     e.stopPropagation();
     setEliminatedOptions((prev) => {
@@ -1257,7 +1375,6 @@ Return ONLY a valid JSON array of objects with these exact keys:
       unattempted,
       questions: activeQuestions,
       userAnswers,
-      markedForReview: markedForReview || {},
       notes: {},
       aiAnalysis: {}
     };
@@ -1286,15 +1403,7 @@ Return ONLY a valid JSON array of objects with these exact keys:
     navigateScreen('review', { selectedAttempt: attemptRecord, filterMode: 'all' });
   };
 
-  const recalculateAndSaveAttempt = async (
-    baseAttempt,
-    newQuestions,
-    newAnswers,
-    newNotes,
-    newTimeSpent,
-    newAiAnalysis = null,
-    newMarkedForReview = null
-  ) => {
+  const recalculateAndSaveAttempt = async (baseAttempt, newQuestions, newAnswers, newNotes, newTimeSpent, newAiAnalysis = null) => {
     let correct = 0, wrong = 0, unattempted = 0;
     const subjectsSet = new Set();
     const chaptersSet = new Set();
@@ -1324,7 +1433,6 @@ Return ONLY a valid JSON array of objects with these exact keys:
       notes: newNotes,
       questionTimeSpent: newTimeSpent,
       aiAnalysis: newAiAnalysis !== null ? newAiAnalysis : (baseAttempt.aiAnalysis || {}),
-      markedForReview: newMarkedForReview !== null ? newMarkedForReview : (baseAttempt.markedForReview || {}),
       correct,
       wrong,
       unattempted,
@@ -1349,7 +1457,6 @@ Return ONLY a valid JSON array of objects with these exact keys:
           notes: newNotes,
           questionTimeSpent: newTimeSpent,
           aiAnalysis: updatedAttempt.aiAnalysis,
-          markedForReview: updatedAttempt.markedForReview,
           correct,
           wrong,
           unattempted,
@@ -1376,24 +1483,6 @@ Return ONLY a valid JSON array of objects with these exact keys:
       selectedAttempt.userAnswers || {},
       selectedAttempt.notes || {},
       selectedAttempt.questionTimeSpent || {}
-    );
-  };
-
-  const toggleMarkForReviewInReview = async (qIdx) => {
-    if (!selectedAttempt) return;
-    const currMap = selectedAttempt.markedForReview || {};
-    const updatedMarked = {
-      ...currMap,
-      [qIdx]: !currMap[qIdx]
-    };
-    await recalculateAndSaveAttempt(
-      selectedAttempt,
-      selectedAttempt.questions,
-      selectedAttempt.userAnswers || {},
-      selectedAttempt.notes || {},
-      selectedAttempt.questionTimeSpent || {},
-      null,
-      updatedMarked
     );
   };
 
@@ -1584,7 +1673,6 @@ Include these exact 5 sections clearly formatted:
     const newNotes = {};
     const newTimeSpent = {};
     const newAiAnalysis = {};
-    const newMarked = {};
 
     selectedAttempt.questions.forEach((q, i) => {
       if (i === qIdx) return;
@@ -1606,12 +1694,9 @@ Include these exact 5 sections clearly formatted:
       if (selectedAttempt.aiAnalysis?.[i] !== undefined) {
         newAiAnalysis[newIndex] = selectedAttempt.aiAnalysis[i];
       }
-      if (selectedAttempt.markedForReview?.[i] !== undefined) {
-        newMarked[newIndex] = selectedAttempt.markedForReview[i];
-      }
     });
 
-    await recalculateAndSaveAttempt(selectedAttempt, newQuestions, newAnswers, newNotes, newTimeSpent, newAiAnalysis, newMarked);
+    await recalculateAndSaveAttempt(selectedAttempt, newQuestions, newAnswers, newNotes, newTimeSpent, newAiAnalysis);
   };
 
   const handleMoveQuestionInSavedMock = async (fromIdx, toIdx, customOrderTitle = null) => {
@@ -1624,8 +1709,7 @@ Include these exact 5 sections clearly formatted:
       ans: selectedAttempt.userAnswers?.[i],
       note: selectedAttempt.notes?.[i],
       time: selectedAttempt.questionTimeSpent?.[i],
-      ai: selectedAttempt.aiAnalysis?.[i],
-      marked: selectedAttempt.markedForReview?.[i]
+      ai: selectedAttempt.aiAnalysis?.[i]
     }));
 
     if (fromIdx !== toIdx) {
@@ -1638,7 +1722,6 @@ Include these exact 5 sections clearly formatted:
     const newNotes = {};
     const newTimeSpent = {};
     const newAiAnalysis = {};
-    const newMarked = {};
 
     itemBundle.forEach((bundle, newIdx) => {
       newQuestions.push({
@@ -1649,10 +1732,9 @@ Include these exact 5 sections clearly formatted:
       if (bundle.note !== undefined) newNotes[newIdx] = bundle.note;
       if (bundle.time !== undefined) newTimeSpent[newIdx] = bundle.time;
       if (bundle.ai !== undefined) newAiAnalysis[newIdx] = bundle.ai;
-      if (bundle.marked !== undefined) newMarked[newIdx] = bundle.marked;
     });
 
-    await recalculateAndSaveAttempt(selectedAttempt, newQuestions, newAnswers, newNotes, newTimeSpent, newAiAnalysis, newMarked);
+    await recalculateAndSaveAttempt(selectedAttempt, newQuestions, newAnswers, newNotes, newTimeSpent, newAiAnalysis);
   };
 
   const handleCustomOrderAndRenameQuestion = async (fromIdx) => {
@@ -1925,12 +2007,6 @@ Include these exact 5 sections clearly formatted:
     return list;
   }, [savedAttempts]);
 
-  const allSubjectsList = useMemo(() => {
-    const s = new Set(['All']);
-    chapterWiseStats.forEach(item => s.add(item.subject));
-    return [...s];
-  }, [chapterWiseStats]);
-
   const selectedAttemptTopicBreakdown = useMemo(() => {
     if (!selectedAttempt) return [];
     const map = {};
@@ -2078,7 +2154,7 @@ Include these exact 5 sections clearly formatted:
             </div>
             <div>
               <h1 className="text-xl font-bold text-white">Mains Mock & AI Course Portal</h1>
-              <p className="text-xs text-slate-400">Cloud Login + Smart Password Recovery</p>
+              <p className="text-xs text-slate-400">Student & Admin Cloud Login</p>
             </div>
           </div>
 
@@ -2210,11 +2286,11 @@ Include these exact 5 sections clearly formatted:
               )}
 
               <div>
-                <label className="block text-xs text-slate-400 mb-1">Username or Email *</label>
+                <label className="block text-xs text-slate-400 mb-1">Username / Email / Admin ID *</label>
                 <input
                   type="text"
                   required
-                  placeholder="e.g. rohit@gmail.com or rohit01"
+                  placeholder="e.g. rohit@gmail.com or Admin ID"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   className="w-full px-3.5 py-2 rounded-xl bg-slate-950 border border-slate-800 text-white text-sm"
@@ -2447,7 +2523,6 @@ Include these exact 5 sections clearly formatted:
     const tParts = getTimerParts(timeLeft);
     const currQ = activeQuestions[currentIdx];
     const currSpentSec = questionTimeSpent[currentIdx] || 0;
-    const isCurrMarked = !!markedForReview[currentIdx];
     const localizedPassage = getLocalizedPassageText(currQ, testLang);
     const localizedQuestion = getLocalizedQuestionText(currQ, testLang);
 
@@ -2529,13 +2604,15 @@ Include these exact 5 sections clearly formatted:
 
           <div className="flex flex-wrap items-center gap-2.5">
             <button
-              onClick={() => toggleMarkForReviewInActiveTest(currentIdx, true)}
-              className={`px-5 py-2 rounded-md text-white text-xs font-bold shadow-sm transition flex items-center gap-1.5 ${
-                isCurrMarked ? 'bg-purple-700 hover:bg-purple-800' : 'bg-[#2e2a85] hover:bg-[#231f6b]'
-              }`}
+              onClick={() => {
+                setMarkedForReview({ ...markedForReview, [currentIdx]: !markedForReview[currentIdx] });
+                if (currentIdx < activeQuestions.length - 1) {
+                  navigateToQuestion(currentIdx + 1);
+                }
+              }}
+              className="px-5 py-2 rounded-md bg-[#2e2a85] hover:bg-[#231f6b] text-white text-xs font-bold shadow-sm transition"
             >
-              <Flag className="w-3.5 h-3.5" />
-              {isCurrMarked ? 'Marked For Review (Next →)' : 'Mark For Review & Next'}
+              {markedForReview[currentIdx] ? 'Unmark Review' : 'Mark For Review'}
             </button>
 
             <button
@@ -2551,7 +2628,7 @@ Include these exact 5 sections clearly formatted:
 
             <button
               onClick={handleSubmitTest}
-              className="px-5 py-2 rounded-md bg-[#0a7c2f] hover:bg-emerald-700 text-white text-xs font-bold shadow-sm transition"
+              className="px-5 py-2 rounded-md bg-[#2e2a85] hover:bg-emerald-700 text-white text-xs font-bold shadow-sm transition"
             >
               Submit Test
             </button>
@@ -2575,21 +2652,13 @@ Include these exact 5 sections clearly formatted:
 
         <div className="flex-1 flex flex-col lg:flex-row overflow-hidden">
           <div className="flex-1 p-4 md:p-6 overflow-y-auto relative">
-            <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+            <div className="flex items-center justify-between mb-3">
               <h2 className="text-base font-extrabold text-slate-900">{mockTitle}</h2>
-              <div className="flex items-center gap-3 text-xs font-bold text-slate-700">
-                <div className="flex items-center gap-1.5">
-                  <span>Total Answered :</span>
-                  <span className="px-2 py-0.5 rounded bg-emerald-100 text-emerald-900 font-extrabold">
-                    {cbtPaletteCounts.answered + cbtPaletteCounts.markedAndAnswered}
-                  </span>
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <span>Marked for Review :</span>
-                  <span className="px-2 py-0.5 rounded bg-purple-100 text-purple-900 font-extrabold">
-                    {cbtPaletteCounts.markedOnly + cbtPaletteCounts.markedAndAnswered}
-                  </span>
-                </div>
+              <div className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                <span>Total Answered :</span>
+                <span className="px-2 py-0.5 rounded bg-amber-100 text-amber-900 font-extrabold">
+                  {cbtPaletteCounts.answered + cbtPaletteCounts.markedAndAnswered}
+                </span>
               </div>
             </div>
 
@@ -2598,7 +2667,7 @@ Include these exact 5 sections clearly formatted:
               style={{ fontSize: `${zoomScale}%` }}
             >
               <div className="flex flex-wrap items-center justify-between gap-2 pb-4 mb-5 border-b border-slate-100">
-                <div className="flex flex-wrap items-center gap-2">
+                <div className="flex items-center gap-2">
                   <span className="text-sm font-extrabold text-slate-900">
                     Question No. {currentIdx + 1}
                   </span>
@@ -2607,14 +2676,9 @@ Include these exact 5 sections clearly formatted:
                       {currQ.topic}
                     </span>
                   )}
-                  {isCurrMarked && (
-                    <span className="px-2.5 py-0.5 rounded-full bg-purple-100 text-purple-800 border border-purple-300 text-[11px] font-extrabold flex items-center gap-1">
-                      🚩 Marked for Review
-                    </span>
-                  )}
                 </div>
 
-                <div className="flex flex-wrap items-center gap-2">
+                <div className="flex items-center gap-2.5">
                   <div className="flex items-center gap-1 text-slate-700 text-xs font-mono font-bold">
                     <Clock className="w-3.5 h-3.5 text-slate-500" />
                     <span>{formatShortTime(currSpentSec)}</span>
@@ -2634,20 +2698,6 @@ Include these exact 5 sections clearly formatted:
                   </select>
 
                   <button
-                    type="button"
-                    onClick={() => toggleMarkForReviewInActiveTest(currentIdx, false)}
-                    className={`px-3 py-1 rounded-full text-xs font-bold border transition flex items-center gap-1 ${
-                      isCurrMarked
-                        ? 'bg-purple-600 text-white border-purple-700 shadow-sm'
-                        : 'bg-purple-50 text-purple-800 border-purple-200 hover:bg-purple-100'
-                    }`}
-                  >
-                    <Flag className="w-3 h-3" />
-                    {isCurrMarked ? 'Marked ✓' : 'Mark Review'}
-                  </button>
-
-                  <button
-                    type="button"
                     onClick={() => toggleStarInActiveTest(currentIdx)}
                     className={`px-2.5 py-1 rounded-full text-xs font-bold border transition ${
                       currQ.starred
@@ -2730,42 +2780,16 @@ Include these exact 5 sections clearly formatted:
               </div>
 
               <div className="flex flex-wrap items-center justify-between gap-3 pt-6 mt-6 border-t border-slate-100">
-                <div className="flex flex-wrap items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const copy = { ...userAnswers };
-                      delete copy[currentIdx];
-                      setUserAnswers(copy);
-                    }}
-                    className="px-4 py-2 rounded-lg border border-slate-300 hover:bg-slate-100 text-slate-700 text-xs font-bold"
-                  >
-                    Clear Response
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => toggleMarkForReviewInActiveTest(currentIdx, true)}
-                    className={`px-4 py-2 rounded-lg text-xs font-bold flex items-center gap-1.5 shadow-sm transition ${
-                      isCurrMarked
-                        ? 'bg-purple-700 hover:bg-purple-800 text-white'
-                        : 'bg-purple-600 hover:bg-purple-700 text-white'
-                    }`}
-                  >
-                    <Flag className="w-3.5 h-3.5" />
-                    🚩 Mark for Review & Next
-                  </button>
-
-                  {isCurrMarked && (
-                    <button
-                      type="button"
-                      onClick={() => toggleMarkForReviewInActiveTest(currentIdx, false)}
-                      className="px-3 py-2 rounded-lg border border-purple-300 bg-purple-50 hover:bg-purple-100 text-purple-800 text-xs font-bold"
-                    >
-                      Unmark Review
-                    </button>
-                  )}
-                </div>
+                <button
+                  onClick={() => {
+                    const copy = { ...userAnswers };
+                    delete copy[currentIdx];
+                    setUserAnswers(copy);
+                  }}
+                  className="px-4 py-2 rounded-lg border border-slate-300 hover:bg-slate-100 text-slate-700 text-xs font-bold"
+                >
+                  Clear Response
+                </button>
 
                 <div className="flex items-center gap-2">
                   <button
@@ -2818,7 +2842,7 @@ Include these exact 5 sections clearly formatted:
                       if (hasAns && isMark) {
                         pillStyle = 'bg-yellow-400 text-slate-950';
                       } else if (isMark) {
-                        pillStyle = 'bg-purple-600 text-white';
+                        pillStyle = 'bg-red-600 text-white';
                       } else if (hasAns) {
                         pillStyle = 'bg-[#0a7c2f] text-white';
                       }
@@ -2860,8 +2884,8 @@ Include these exact 5 sections clearly formatted:
                     </span>
                   </div>
                   <div className="flex items-center justify-between">
-                    <span>Marked for Review</span>
-                    <span className="px-3 py-1 rounded-full bg-purple-600 text-white font-bold">
+                    <span>Marked</span>
+                    <span className="px-3 py-1 rounded-full bg-red-600 text-white font-bold">
                       {String(cbtPaletteCounts.markedOnly).padStart(2, '0')}
                     </span>
                   </div>
@@ -2946,6 +2970,20 @@ Include these exact 5 sections clearly formatted:
             </button>
 
             <button
+              onClick={() => {
+                loadSharedMocksForAllUsers();
+                navigateScreen('shared');
+              }}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ${
+                activeTab === 'shared'
+                  ? 'bg-indigo-600 text-white'
+                  : 'bg-indigo-500/15 text-indigo-300 border border-indigo-500/30 hover:bg-indigo-500/25'
+              }`}
+            >
+              <Megaphone className="w-3.5 h-3.5" /> 📢 Shared Mocks ({sharedCommunityMocks.length})
+            </button>
+
+            <button
               onClick={() => navigateScreen('courses')}
               className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ${
                 activeTab === 'courses'
@@ -2953,7 +2991,7 @@ Include these exact 5 sections clearly formatted:
                   : 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 hover:bg-emerald-500/25'
               }`}
             >
-              <Video className="w-3.5 h-3.5" /> 🎓 Courses (Demo)
+              <Video className="w-3.5 h-3.5" /> 🎓 Courses
             </button>
 
             <button
@@ -2981,7 +3019,7 @@ Include these exact 5 sections clearly formatted:
                 activeTab === 'admin' ? 'bg-amber-500 text-slate-950' : 'bg-slate-800 text-amber-300 hover:bg-slate-700'
               }`}
             >
-              👑 Admin
+              {isAdminAuthenticated ? '👑 Admin (Unlocked)' : '🔒 Admin Login'}
             </button>
 
             <div className="flex items-center bg-slate-800 rounded-xl px-2 py-1 border border-slate-700">
@@ -3005,7 +3043,11 @@ Include these exact 5 sections clearly formatted:
             </button>
 
             <button
-              onClick={() => signOut(auth)}
+              onClick={() => {
+                setIsAdminAuthenticated(false);
+                sessionStorage.removeItem('is_rohit_admin_unlocked');
+                signOut(auth);
+              }}
               className="px-3 py-1.5 rounded-xl text-xs font-semibold bg-red-500/10 hover:bg-red-500/20 text-red-300 flex items-center gap-1"
             >
               <LogOut className="w-3.5 h-3.5" /> Logout
@@ -3014,9 +3056,7 @@ Include these exact 5 sections clearly formatted:
         </div>
       </header>
 
-      {/* ==================================================================== */}
-      {/* HYBRID PAYMENT MODAL: RAZORPAY AUTO-CHECKOUT + UPI / CODE BACKUP     */}
-      {/* ==================================================================== */}
+      {/* HYBRID PAYMENT MODAL */}
       {showPaymentModal && currentCourse && (
         <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50">
           <div className="bg-slate-900 border border-indigo-500/40 rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl">
@@ -3093,9 +3133,7 @@ Include these exact 5 sections clearly formatted:
         </div>
       )}
 
-      {/* ==================================================================== */}
-      {/* BUILT-IN RAZORPAY SANDBOX SIMULATOR (WHEN LIVE KEY IS NOT ENTERED)   */}
-      {/* ==================================================================== */}
+      {/* BUILT-IN RAZORPAY SANDBOX SIMULATOR */}
       {showGatewaySimulator && currentCourse && (
         <div className="fixed inset-0 bg-black/85 flex items-center justify-center p-4 z-50">
           <div className="bg-white text-slate-900 rounded-2xl max-w-sm w-full overflow-hidden shadow-2xl">
@@ -3147,9 +3185,7 @@ Include these exact 5 sections clearly formatted:
         </div>
       )}
 
-      {/* ==================================================================== */}
-      {/* 4 MANDATORY LEGAL POLICY PAGES MODAL (FOR GATEWAY KYC VERIFICATION)  */}
-      {/* ==================================================================== */}
+      {/* 4 MANDATORY LEGAL POLICY PAGES MODAL */}
       {activeLegalPolicyModal && (
         <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50">
           <div className="bg-slate-900 border border-slate-700 rounded-2xl max-w-2xl w-full max-h-[85vh] flex flex-col shadow-2xl">
@@ -3172,20 +3208,20 @@ Include these exact 5 sections clearly formatted:
               {activeLegalPolicyModal === 'terms' && (
                 <>
                   <p><b>1. Acceptance of Terms:</b> By accessing and using Mains AI Mock & Course Portal (`mains-mock-portal-gray.vercel.app`), you agree to comply with these Terms and Conditions for online test series and digital educational batches.</p>
-                  <p><b>2. Digital Course & Test Access:</b> Enrolled courses and CBT mock tests are provided for individual student preparation only. Sharing login credentials or commercial redistribution of study material is strictly prohibited.</p>
+                  <p><b>2. Digital Course & Test Access:</b> Enrolled courses and CBT mock tests are provided for individual student preparation only.</p>
                   <p><b>3. Pricing & Access Validity:</b> All course fees are displayed in Indian Rupees (INR). Course access is activated immediately upon successful online payment verification.</p>
                 </>
               )}
               {activeLegalPolicyModal === 'privacy' && (
                 <>
                   <p><b>1. Information We Collect:</b> We collect only basic student registration details (Name, Email/Username, and Target Exam) to synchronize your mock test scores, revision notes, and enrolled courses across devices.</p>
-                  <p><b>2. Data Security:</b> All user data is securely stored in Google Firebase Cloud Firestore. Online payments are processed via 100% PCI-DSS compliant payment gateways (Razorpay/UPI); we never store your card or banking PIN on our servers.</p>
+                  <p><b>2. Data Security:</b> All user data is securely stored in Google Firebase Cloud Firestore. Online payments are processed via 100% PCI-DSS compliant payment gateways (Razorpay/UPI).</p>
                 </>
               )}
               {activeLegalPolicyModal === 'refund' && (
                 <>
                   <p><b>1. Free Demo Before Purchase:</b> Every course and mock test batch provides a Free Demo Lecture and Demo CBT Mock Test so students can evaluate quality before making a payment.</p>
-                  <p><b>2. Refund & Cancellation Policy:</b> Since digital courses and downloadable/attemptable test series are unlocked immediately upon purchase, fees once paid are generally non-refundable. However, in case of duplicate payment or technical activation failure, a 100% refund or instant resolution will be processed within 5–7 working days.</p>
+                  <p><b>2. Refund & Cancellation Policy:</b> In case of duplicate payment or technical activation failure, a 100% refund or instant resolution will be processed within 5–7 working days.</p>
                 </>
               )}
               {activeLegalPolicyModal === 'contact' && (
@@ -3194,7 +3230,6 @@ Include these exact 5 sections clearly formatted:
                   <p><b>Official Support WhatsApp / Phone:</b> +{paymentSettings.whatsappNumber}</p>
                   <p><b>UPI / Billing Support ID:</b> {paymentSettings.upiId}</p>
                   <p><b>Operating Address:</b> Bhopal / Balaghat, Madhya Pradesh, India</p>
-                  <p><b>Support Response Time:</b> Within 24 Hours for all course unlock, payment, or technical queries.</p>
                 </>
               )}
             </div>
@@ -3303,6 +3338,95 @@ Include these exact 5 sections clearly formatted:
       )}
 
       <main className="flex-1 max-w-7xl w-full mx-auto p-4">
+        {/* ==================================================================== */}
+        {/* 📢 SHARED LIVE MOCKS TAB (VISIBLE TO ALL LOGGED-IN STUDENTS)         */}
+        {/* ==================================================================== */}
+        {activeTab === 'shared' && (
+          <div className="space-y-5">
+            <div className="bg-gradient-to-r from-indigo-950/80 via-slate-900 to-slate-900 border border-indigo-500/30 rounded-2xl p-6 flex flex-wrap items-center justify-between gap-4">
+              <div>
+                <span className="px-2.5 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 text-xs font-bold">
+                  Official Shared Test Series
+                </span>
+                <h2 className="text-xl font-extrabold text-white mt-1.5 flex items-center gap-2">
+                  <Megaphone className="w-5 h-5 text-amber-400" />
+                  <span>Admin Shared Live Mocks ({sharedCommunityMocks.length})</span>
+                </h2>
+                <p className="text-xs text-slate-300 mt-1">
+                  Admin (Rohit Sir) dwara share kiye gaye sabhi official CBT Mock Tests yahan sabhi logged-in students ke liye available hain.
+                </p>
+              </div>
+              <button
+                onClick={loadSharedMocksForAllUsers}
+                className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-emerald-300 text-xs font-bold flex items-center gap-1.5"
+              >
+                <RefreshCw className="w-3.5 h-3.5" /> Refresh Shared Mocks
+              </button>
+            </div>
+
+            {sharedCommunityMocks.length === 0 ? (
+              <div className="bg-slate-900 border border-slate-800 rounded-2xl p-10 text-center space-y-3">
+                <p className="text-sm text-slate-300 font-semibold">
+                  Abhi Admin ne koi Live Mock share nahi kiya hai.
+                </p>
+                <p className="text-xs text-slate-400">
+                  Admin Portal me jakar kisi bhi Saved Mock ke aage "📢 Share with All Users" button dabayein!
+                </p>
+              </div>
+            ) : (
+              <div className="grid md:grid-cols-2 gap-4">
+                {sharedCommunityMocks.map((sm, sIdx) => (
+                  <div
+                    key={sIdx}
+                    className="bg-slate-900 border border-indigo-500/30 rounded-2xl p-5 flex flex-col justify-between gap-4 shadow-lg"
+                  >
+                    <div>
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 text-[11px] font-extrabold">
+                          📢 Official Shared Mock #{sIdx + 1}
+                        </span>
+                        <span className="text-[11px] text-slate-400">{sm.sharedDateStr}</span>
+                      </div>
+                      <h3 className="text-base font-extrabold text-white mt-2">{sm.title}</h3>
+                      <p className="text-xs text-indigo-300 mt-1">
+                        {sm.primarySubject} • {sm.primaryChapter} • <b>{sm.qCount || sm.questions?.length} Questions</b> • ⏱ {sm.durationMins || 20} Mins
+                      </p>
+                      <p className="text-[11px] text-slate-400 mt-1">
+                        Shared by: <b className="text-amber-300">{sm.sharedBy || 'Admin'}</b>
+                      </p>
+                    </div>
+
+                    <div className="flex gap-2 pt-2 border-t border-slate-800">
+                      <button
+                        onClick={() => {
+                          setMockTitle(sm.title);
+                          setDurationMins(sm.durationMins || 20);
+                          setPositiveMarks(sm.positiveMarks || 3);
+                          setNegativeMarks(sm.negativeMarks || 1);
+                          startMockWithQuestions(sm.questions);
+                        }}
+                        className="flex-1 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-extrabold shadow"
+                      >
+                        ▶ Attempt Official Shared Mock ({sm.questions?.length} Qs)
+                      </button>
+
+                      {isAdminAuthenticated && (
+                        <button
+                          onClick={() => handleDeleteSharedMockFromAdmin(sm)}
+                          className="px-3 py-2.5 rounded-xl bg-rose-500/20 hover:bg-rose-600 text-rose-300 hover:text-white text-xs font-bold"
+                          title="Remove from Shared Mocks"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
         {/* ==================================================================== */}
         {/* 🎓 PAID COURSES / BATCHES DEMO TAB                                   */}
         {/* ==================================================================== */}
@@ -3556,134 +3680,289 @@ Include these exact 5 sections clearly formatted:
         )}
 
         {/* ==================================================================== */}
-        {/* 👑 ADMIN PANEL TAB (RAZORPAY KEY + UPI + COURSE PUBLISHER)           */}
+        {/* 👑 DEDICATED ADMIN PORTAL (PROTECTED BY ADMIN ID & PASSWORD)         */}
         {/* ==================================================================== */}
         {activeTab === 'admin' && (
-          <div className="grid md:grid-cols-2 gap-6">
-            <div className="bg-slate-900 border border-amber-500/30 rounded-2xl p-6 space-y-4">
-              <div className="flex items-center gap-2 text-amber-400 font-extrabold text-base">
-                <ShieldCheck className="w-5 h-5" />
-                <span>1. Razorpay Gateway & UPI Payment Settings</span>
+          !isAdminAuthenticated ? (
+            <div className="max-w-md mx-auto my-8 bg-slate-900 border border-amber-500/40 rounded-2xl p-6 space-y-5 shadow-2xl">
+              <div className="flex items-center gap-3">
+                <div className="p-3 rounded-xl bg-amber-500/20 text-amber-400">
+                  <Lock className="w-6 h-6" />
+                </div>
+                <div>
+                  <h2 className="text-lg font-extrabold text-white">Protected Admin Portal Login</h2>
+                  <p className="text-xs text-slate-400">Sirf Authorized Admin ID & Password se khulega</p>
+                </div>
               </div>
-              <p className="text-xs text-slate-400">
-                Yahan apni Razorpay Key ID (`rzp_test_...` ya `rzp_live_...`), UPI ID aur Master Unlock Code set karein. Agar Razorpay Key khali rakhenge, toh Built-in Test Gateway Simulator chalega.
-              </p>
 
-              <div className="space-y-3">
-                <div>
-                  <label className="block text-xs text-indigo-300 font-bold mb-1">
-                    Razorpay Key ID (Optional — Leave blank for Built-in Simulator)
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="e.g. rzp_test_1DP5mmOlF5G5ag"
-                    value={paymentSettings.razorpayKeyId || ''}
-                    onChange={(e) => setPaymentSettings({ ...paymentSettings, razorpayKeyId: e.target.value })}
-                    className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-indigo-500/40 text-xs text-white font-mono"
-                  />
+              {adminLoginError && (
+                <div className="p-3 rounded-xl bg-rose-500/15 border border-rose-500/30 text-rose-300 text-xs font-semibold">
+                  {adminLoginError}
                 </div>
-                <div>
-                  <label className="block text-xs text-slate-300 mb-1">Your Direct UPI ID</label>
-                  <input
-                    type="text"
-                    value={paymentSettings.upiId}
-                    onChange={(e) => setPaymentSettings({ ...paymentSettings, upiId: e.target.value })}
-                    className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white font-mono"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs text-slate-300 mb-1">Your WhatsApp Number (With 91 Country Code)</label>
-                  <input
-                    type="text"
-                    value={paymentSettings.whatsappNumber}
-                    onChange={(e) => setPaymentSettings({ ...paymentSettings, whatsappNumber: e.target.value })}
-                    className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white font-mono"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs text-slate-300 mb-1">Master Course Unlock Code (Secret Coupon)</label>
-                  <input
-                    type="text"
-                    value={paymentSettings.masterUnlockCode}
-                    onChange={(e) => setPaymentSettings({ ...paymentSettings, masterUnlockCode: e.target.value.toUpperCase() })}
-                    className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-amber-300 font-mono font-bold"
-                  />
-                </div>
-                <button
-                  onClick={() => {
-                    localStorage.setItem('admin_payment_settings', JSON.stringify(paymentSettings));
-                    alert('✓ Razorpay & UPI Payment Settings Saved!');
-                  }}
-                  className="w-full py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-extrabold text-xs"
-                >
-                  Save Gateway & Unlock Settings
-                </button>
-              </div>
-            </div>
+              )}
 
-            <div className="bg-slate-900 border border-indigo-500/30 rounded-2xl p-6 space-y-4">
-              <div className="flex items-center gap-2 text-indigo-400 font-extrabold text-base">
-                <PlusCircle className="w-5 h-5" />
-                <span>2. Publish a New YouTube Course / Batch</span>
-              </div>
-              <p className="text-xs text-slate-400">
-                Apna koi bhi Unlisted ya Public YouTube video link yahan dalein—website uska Course Card, Free Demo aur Paid Lock apne aap bana degi!
-              </p>
-
-              <form onSubmit={handleAddNewCourseFromAdmin} className="space-y-3">
+              <form onSubmit={handleAdminPortalLogin} className="space-y-4">
                 <div>
-                  <label className="block text-xs text-slate-300 mb-1">Course / Batch Name *</label>
+                  <label className="block text-xs text-slate-300 mb-1">Admin ID *</label>
                   <input
                     type="text"
                     required
-                    placeholder="e.g. SSC CGL Mains AAO Economics & Governance Batch"
-                    value={newCourseTitle}
-                    onChange={(e) => setNewCourseTitle(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white"
+                    placeholder="Enter Admin ID..."
+                    value={adminLoginId}
+                    onChange={(e) => setAdminLoginId(e.target.value)}
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-white text-xs font-mono"
                   />
                 </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs text-slate-300 mb-1">YouTube Video URL *</label>
-                    <input
-                      type="text"
-                      required
-                      placeholder="https://youtu.be/..."
-                      value={newCourseYoutubeUrl}
-                      onChange={(e) => setNewCourseYoutubeUrl(e.target.value)}
-                      className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs text-slate-300 mb-1">Course Price (₹) *</label>
-                    <input
-                      type="number"
-                      required
-                      value={newCoursePrice}
-                      onChange={(e) => setNewCoursePrice(e.target.value)}
-                      className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-emerald-400 font-bold"
-                    />
-                  </div>
-                </div>
                 <div>
-                  <label className="block text-xs text-slate-300 mb-1">Course Description</label>
-                  <textarea
-                    rows={2}
-                    placeholder="Complete syllabus coverage with AI notes and CBT practice tests..."
-                    value={newCourseDesc}
-                    onChange={(e) => setNewCourseDesc(e.target.value)}
-                    className="w-full p-3 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white"
+                  <label className="block text-xs text-slate-300 mb-1">Admin Password *</label>
+                  <input
+                    type="password"
+                    required
+                    placeholder="Enter Admin Password..."
+                    value={adminLoginPass}
+                    onChange={(e) => setAdminLoginPass(e.target.value)}
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-white text-xs font-mono"
                   />
                 </div>
                 <button
                   type="submit"
-                  className="w-full py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-extrabold text-xs"
+                  className="w-full py-3 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-extrabold text-xs transition shadow-lg"
                 >
-                  + Publish Course to Student Portal
+                  🔓 Verify & Unlock Admin Command Center
                 </button>
               </form>
             </div>
-          </div>
+          ) : (
+            <div className="space-y-6">
+              {/* Admin Top Status Bar */}
+              <div className="bg-gradient-to-r from-amber-500/20 via-slate-900 to-slate-900 border border-amber-500/40 rounded-2xl p-5 flex flex-wrap items-center justify-between gap-4">
+                <div>
+                  <span className="px-2.5 py-0.5 rounded-full bg-amber-400 text-slate-950 text-xs font-extrabold">
+                    👑 Master Admin Logged In: {ADMIN_MASTER_ID}
+                  </span>
+                  <h2 className="text-xl font-extrabold text-white mt-1.5">
+                    Admin Command Center — Share Mocks, Courses & Gateway Control
+                  </h2>
+                  <p className="text-xs text-slate-300">
+                    Yahan se aap apna koi bhi Mock Test 1-Click me apne portal ke sabhi Logged-In Students ke sath share kar sakte hain.
+                  </p>
+                </div>
+                <button
+                  onClick={() => {
+                    setIsAdminAuthenticated(false);
+                    sessionStorage.removeItem('is_rohit_admin_unlocked');
+                  }}
+                  className="px-4 py-2 rounded-xl bg-rose-500/20 hover:bg-rose-600 text-rose-300 hover:text-white text-xs font-bold"
+                >
+                  🔒 Lock Admin Panel
+                </button>
+              </div>
+
+              {/* Section 1: Share Mocks to All Logged-In Users */}
+              <div className="bg-slate-900 border border-indigo-500/40 rounded-2xl p-6 space-y-4">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 text-indigo-400 font-extrabold text-base">
+                    <Share2 className="w-5 h-5" />
+                    <span>1. Share Your Mocks with All Logged-In Users ({savedAttempts.length} Your Mocks)</span>
+                  </div>
+                  <button
+                    onClick={() =>
+                      handleShareMockWithAllUsers({
+                        title: 'SSC CGL Tier-2 Computer Official PYQ Mock',
+                        primarySubject: 'Computer Knowledge',
+                        primaryChapter: 'Complete Computer',
+                        durationMins: 15,
+                        positiveMarks: 3,
+                        negativeMarks: 1,
+                        questions: COMPUTER_COURSE_QUESTIONS
+                      })
+                    }
+                    className="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-extrabold"
+                  >
+                    + Share Demo Computer Mock to All Users
+                  </button>
+                </div>
+
+                {savedAttempts.length === 0 ? (
+                  <p className="text-xs text-slate-400">
+                    Aapke Vault me abhi koi saved mock nahi hai. Pehle "+ Create Mock" se mock banayein ya upar "+ Share Demo Computer Mock" dabayein.
+                  </p>
+                ) : (
+                  <div className="grid md:grid-cols-2 gap-3">
+                    {savedAttempts.map((att, i) => (
+                      <div
+                        key={i}
+                        className="p-4 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-between gap-3"
+                      >
+                        <div>
+                          <div className="text-sm font-bold text-white">{att.title}</div>
+                          <div className="text-xs text-slate-400 mt-0.5">
+                            {att.questions?.length} Questions • {att.primarySubject} ({att.primaryChapter})
+                          </div>
+                        </div>
+                        <button
+                          disabled={isSharingMock}
+                          onClick={() => handleShareMockWithAllUsers(att)}
+                          className="px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-extrabold flex items-center gap-1.5 shrink-0 shadow"
+                        >
+                          <Share2 className="w-3.5 h-3.5" /> Share to All Users
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Currently Shared Live Mocks Management */}
+                {sharedCommunityMocks.length > 0 && (
+                  <div className="pt-4 border-t border-slate-800 space-y-2.5">
+                    <div className="text-xs font-bold text-emerald-400">
+                      📢 Currently Live Shared Mocks (Visible to All Students: {sharedCommunityMocks.length}):
+                    </div>
+                    <div className="grid md:grid-cols-2 gap-2.5">
+                      {sharedCommunityMocks.map((sm, idx) => (
+                        <div
+                          key={idx}
+                          className="p-3 rounded-xl bg-slate-950 border border-emerald-500/30 flex items-center justify-between gap-2 text-xs"
+                        >
+                          <div>
+                            <div className="font-bold text-white">{sm.title}</div>
+                            <div className="text-[11px] text-slate-400">
+                              {sm.qCount || sm.questions?.length} Qs • Shared on {sm.sharedDateStr}
+                            </div>
+                          </div>
+                          <button
+                            onClick={() => handleDeleteSharedMockFromAdmin(sm)}
+                            className="px-2.5 py-1 rounded-lg bg-rose-500/20 hover:bg-rose-600 text-rose-300 hover:text-white font-bold"
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Section 2 & 3: Payment Settings + Course Publisher */}
+              <div className="grid md:grid-cols-2 gap-6">
+                <div className="bg-slate-900 border border-amber-500/30 rounded-2xl p-6 space-y-4">
+                  <div className="flex items-center gap-2 text-amber-400 font-extrabold text-base">
+                    <ShieldCheck className="w-5 h-5" />
+                    <span>2. Razorpay Gateway & UPI Payment Settings</span>
+                  </div>
+                  <div className="space-y-3">
+                    <div>
+                      <label className="block text-xs text-indigo-300 font-bold mb-1">
+                        Razorpay Key ID (Optional — Leave blank for Built-in Simulator)
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="e.g. rzp_test_1DP5mmOlF5G5ag"
+                        value={paymentSettings.razorpayKeyId || ''}
+                        onChange={(e) => setPaymentSettings({ ...paymentSettings, razorpayKeyId: e.target.value })}
+                        className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-indigo-500/40 text-xs text-white font-mono"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-slate-300 mb-1">Your Direct UPI ID</label>
+                      <input
+                        type="text"
+                        value={paymentSettings.upiId}
+                        onChange={(e) => setPaymentSettings({ ...paymentSettings, upiId: e.target.value })}
+                        className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white font-mono"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-slate-300 mb-1">Your WhatsApp Number (With 91 Country Code)</label>
+                      <input
+                        type="text"
+                        value={paymentSettings.whatsappNumber}
+                        onChange={(e) => setPaymentSettings({ ...paymentSettings, whatsappNumber: e.target.value })}
+                        className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white font-mono"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-slate-300 mb-1">Master Course Unlock Code (Secret Coupon)</label>
+                      <input
+                        type="text"
+                        value={paymentSettings.masterUnlockCode}
+                        onChange={(e) => setPaymentSettings({ ...paymentSettings, masterUnlockCode: e.target.value.toUpperCase() })}
+                        className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-amber-300 font-mono font-bold"
+                      />
+                    </div>
+                    <button
+                      onClick={() => {
+                        localStorage.setItem('admin_payment_settings', JSON.stringify(paymentSettings));
+                        alert('✓ Razorpay & UPI Payment Settings Saved!');
+                      }}
+                      className="w-full py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-extrabold text-xs"
+                    >
+                      Save Gateway & Unlock Settings
+                    </button>
+                  </div>
+                </div>
+
+                <div className="bg-slate-900 border border-indigo-500/30 rounded-2xl p-6 space-y-4">
+                  <div className="flex items-center gap-2 text-indigo-400 font-extrabold text-base">
+                    <PlusCircle className="w-5 h-5" />
+                    <span>3. Publish a New YouTube Course / Batch</span>
+                  </div>
+                  <form onSubmit={handleAddNewCourseFromAdmin} className="space-y-3">
+                    <div>
+                      <label className="block text-xs text-slate-300 mb-1">Course / Batch Name *</label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="e.g. SSC CGL Mains AAO Economics & Governance Batch"
+                        value={newCourseTitle}
+                        onChange={(e) => setNewCourseTitle(e.target.value)}
+                        className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white"
+                      />
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-xs text-slate-300 mb-1">YouTube Video URL *</label>
+                        <input
+                          type="text"
+                          required
+                          placeholder="https://youtu.be/..."
+                          value={newCourseYoutubeUrl}
+                          onChange={(e) => setNewCourseYoutubeUrl(e.target.value)}
+                          className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-slate-300 mb-1">Course Price (₹) *</label>
+                        <input
+                          type="number"
+                          required
+                          value={newCoursePrice}
+                          onChange={(e) => setNewCoursePrice(e.target.value)}
+                          className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-emerald-400 font-bold"
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-xs text-slate-300 mb-1">Course Description</label>
+                      <textarea
+                        rows={2}
+                        placeholder="Complete syllabus coverage with AI notes and CBT practice tests..."
+                        value={newCourseDesc}
+                        onChange={(e) => setNewCourseDesc(e.target.value)}
+                        className="w-full p-3 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white"
+                      />
+                    </div>
+                    <button
+                      type="submit"
+                      className="w-full py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-extrabold text-xs"
+                    >
+                      + Publish Course to Student Portal
+                    </button>
+                  </form>
+                </div>
+              </div>
+            </div>
+          )
         )}
 
         {/* ==================================================================== */}
@@ -3700,15 +3979,24 @@ Include these exact 5 sections clearly formatted:
                   Welcome back, {user.displayName || 'Rohit'}!
                 </h2>
                 <p className="text-xs text-slate-300 mt-1">
-                  Razorpay Automatic Checkout + UPI Unlock + AI Revision Hub ab aapke portal par live hai.
+                  Admin Shared Mocks, Video Courses aur AI Topic Vault ab sabhi logged-in students ke liye active hain.
                 </p>
               </div>
               <div className="flex flex-wrap gap-2.5">
                 <button
+                  onClick={() => {
+                    loadSharedMocksForAllUsers();
+                    navigateScreen('shared');
+                  }}
+                  className="px-5 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-extrabold shadow-lg flex items-center gap-1.5"
+                >
+                  <Megaphone className="w-4 h-4" /> 📢 Shared Live Mocks ({sharedCommunityMocks.length})
+                </button>
+                <button
                   onClick={() => navigateScreen('courses')}
                   className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-extrabold shadow-lg flex items-center gap-1.5"
                 >
-                  <Video className="w-4 h-4" /> 🎓 Open Computer Demo Course
+                  <Video className="w-4 h-4" /> 🎓 Open Video Courses
                 </button>
                 <button
                   onClick={() => navigateScreen('create')}
@@ -3716,34 +4004,66 @@ Include these exact 5 sections clearly formatted:
                 >
                   + Upload PDF & Create Mock
                 </button>
-                {allStarredQuestions.length > 0 && (
-                  <button
-                    onClick={() => {
-                      setMockTitle(`★ Starred Tough Questions Mock (${allStarredQuestions.length} Qs)`);
-                      startMockWithQuestions(allStarredQuestions);
-                    }}
-                    className="px-4 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-extrabold shadow-lg"
-                  >
-                    ★ Practice Starred Qs ({allStarredQuestions.length})
-                  </button>
-                )}
               </div>
             </div>
 
+            {/* Admin Shared Live Mocks Section right on Student Home Page */}
+            {sharedCommunityMocks.length > 0 && (
+              <div className="bg-slate-900 border border-amber-500/30 rounded-2xl p-5 space-y-3">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-extrabold text-amber-300 flex items-center gap-2">
+                    <Megaphone className="w-4 h-4" />
+                    <span>📢 Official Mocks Shared by Admin (For All Logged-In Students)</span>
+                  </h3>
+                  <button
+                    onClick={() => navigateScreen('shared')}
+                    className="text-xs text-indigo-400 hover:underline font-bold"
+                  >
+                    View All ({sharedCommunityMocks.length}) →
+                  </button>
+                </div>
+                <div className="grid md:grid-cols-2 gap-3">
+                  {sharedCommunityMocks.slice(0, 4).map((sm, idx) => (
+                    <div
+                      key={idx}
+                      className="p-4 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-between gap-3"
+                    >
+                      <div>
+                        <div className="text-sm font-bold text-white">{sm.title}</div>
+                        <div className="text-[11px] text-slate-400 mt-0.5">
+                          {sm.primarySubject} • {sm.questions?.length} Qs • {sm.durationMins} Mins
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => {
+                          setMockTitle(sm.title);
+                          setDurationMins(sm.durationMins || 20);
+                          startMockWithQuestions(sm.questions);
+                        }}
+                        className="px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-extrabold shrink-0"
+                      >
+                        ▶ Attempt Now
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4">
-                <div className="text-xs text-slate-400">Total Saved Mocks</div>
+                <div className="text-xs text-slate-400">Your Saved Mocks</div>
                 <div className="text-2xl font-extrabold text-white mt-1">{savedAttempts.length}</div>
                 <div className="text-[11px] text-indigo-400 mt-1">Used: {storageStats.kb} KB / 1 GB</div>
               </div>
               <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4">
-                <div className="text-xs text-slate-400">Questions in Vault</div>
-                <div className="text-2xl font-extrabold text-emerald-400 mt-1">{totalSavedQs}</div>
-                <div className="text-[11px] text-slate-400 mt-1">Across {chapterWiseStats.length} Chapters</div>
+                <div className="text-xs text-slate-400">Shared Live Mocks</div>
+                <div className="text-2xl font-extrabold text-amber-400 mt-1">{sharedCommunityMocks.length}</div>
+                <div className="text-[11px] text-slate-400 mt-1">Broadcast by Admin</div>
               </div>
               <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4">
                 <div className="text-xs text-slate-400">Overall Accuracy</div>
-                <div className="text-2xl font-extrabold text-amber-400 mt-1">{overallAccuracy}%</div>
+                <div className="text-2xl font-extrabold text-emerald-400 mt-1">{overallAccuracy}%</div>
                 <div className="text-[11px] text-slate-400 mt-1">{totalCorrectAll} Correct Answers</div>
               </div>
               <div
@@ -3755,44 +4075,6 @@ Include these exact 5 sections clearly formatted:
                 <div className="text-[11px] text-emerald-400 mt-1">Click to Watch & Test →</div>
               </div>
             </div>
-
-            {savedAttempts.length > 0 && (
-              <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-3">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                    <BarChart3 className="w-4 h-4 text-emerald-400" />
-                    <span>📈 Recent Mock Score % Trend</span>
-                  </h3>
-                  <span className="text-xs text-slate-400">Last {Math.min(8, savedAttempts.length)} Mocks</span>
-                </div>
-                <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-8 gap-2.5 pt-1">
-                  {savedAttempts.slice(0, 8).map((att, i) => {
-                    const pct = att.maxScore > 0 ? Math.max(0, Math.round((att.totalScore / att.maxScore) * 100)) : 0;
-                    return (
-                      <div
-                        key={i}
-                        onClick={() => navigateScreen('review', { selectedAttempt: att, filterMode: 'all' })}
-                        className="p-2.5 rounded-xl bg-slate-950 border border-slate-800 hover:border-indigo-500 cursor-pointer flex flex-col justify-between"
-                      >
-                        <div className="text-[10px] text-slate-400 truncate">{att.title}</div>
-                        <div className="my-2 h-16 bg-slate-900 rounded-lg flex items-end p-1 overflow-hidden">
-                          <div
-                            className={`w-full rounded ${
-                              pct >= 75 ? 'bg-emerald-500' : pct >= 50 ? 'bg-amber-500' : 'bg-rose-500'
-                            }`}
-                            style={{ height: `${Math.max(12, pct)}%` }}
-                          />
-                        </div>
-                        <div className="flex items-center justify-between text-[11px] font-bold">
-                          <span className="text-white">{att.totalScore}/{att.maxScore}</span>
-                          <span className="text-indigo-400">{pct}%</span>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
           </div>
         )}
 
@@ -4076,7 +4358,7 @@ Include these exact 5 sections clearly formatted:
 
             {savedAttempts.length === 0 ? (
               <div className="bg-slate-900 border border-slate-800 rounded-2xl p-10 text-center text-slate-400">
-                Abhi tak koi mock test save nahi hua hai. "🎓 Courses (Demo)" ya "+ Create Mock" me jakar apna pehla test dein!
+                Abhi tak koi mock test save nahi hua hai. "🎓 Courses" ya "+ Create Mock" me jakar apna pehla test dein!
               </div>
             ) : vaultViewMode === 'starred' ? (
               <div className="space-y-4">
@@ -4228,13 +4510,21 @@ Include these exact 5 sections clearly formatted:
                         Score: {att.totalScore}/{att.maxScore} • Correct: {att.correct} • Wrong: {att.wrong}
                       </p>
                     </div>
-                    <div className="flex gap-2">
+                    <div className="flex flex-wrap gap-2">
                       <button
                         onClick={() => navigateScreen('review', { selectedAttempt: att, filterMode: 'all' })}
                         className="flex-1 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold"
                       >
                         Detailed Result & Ask AI
                       </button>
+                      {isAdminAuthenticated && (
+                        <button
+                          onClick={() => handleShareMockWithAllUsers(att)}
+                          className="px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center gap-1"
+                        >
+                          <Share2 className="w-3.5 h-3.5" /> Share to All Users
+                        </button>
+                      )}
                     </div>
                   </div>
                 ))}
@@ -4257,7 +4547,6 @@ Include these exact 5 sections clearly formatted:
           const negMarksLost = Number(((selectedAttempt.wrong || 0) * (selectedAttempt.negativeMarks || 1)).toFixed(2));
           const totalSpentSec = selectedAttempt.totalTimeSpentSec || 0;
           const avgTimePerQ = totalQs > 0 ? Math.round(totalSpentSec / totalQs) : 0;
-          const markedReviewCount = Object.values(selectedAttempt.markedForReview || {}).filter(Boolean).length;
 
           return (
             <div className="space-y-6">
@@ -4277,11 +4566,19 @@ Include these exact 5 sections clearly formatted:
                     </div>
                     <h2 className="text-xl font-extrabold text-white mt-2">{selectedAttempt.title}</h2>
                     <p className="text-xs text-slate-400 mt-0.5">
-                      Attempted on: {selectedAttempt.dateStr} • Total Questions: {totalQs} • Marked for Review: {markedReviewCount}
+                      Attempted on: {selectedAttempt.dateStr} • Total Questions: {totalQs}
                     </p>
                   </div>
 
                   <div className="flex flex-wrap items-center gap-2 print:hidden">
+                    {isAdminAuthenticated && (
+                      <button
+                        onClick={() => handleShareMockWithAllUsers(selectedAttempt)}
+                        className="px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-extrabold flex items-center gap-1.5"
+                      >
+                        <Share2 className="w-3.5 h-3.5" /> 📢 Share Mock to All Users
+                      </button>
+                    )}
                     <button
                       onClick={() => window.print()}
                       className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-amber-300 text-xs font-bold"
@@ -4415,22 +4712,15 @@ Include these exact 5 sections clearly formatted:
                   Filter Questions & Manage Order (`↑` `↓` / `Set Order` / `Remove Q`):
                 </div>
                 <div className="flex flex-wrap gap-2">
-                  {[
-                    { id: 'all', label: 'All' },
-                    { id: 'wrong', label: 'Wrong ✗' },
-                    { id: 'unattempted', label: 'Unattempted' },
-                    { id: 'correct', label: 'Correct ✓' },
-                    { id: 'marked', label: `🚩 Marked for Review (${markedReviewCount})` },
-                    { id: 'starred', label: '★ Starred' }
-                  ].map((f) => (
+                  {['all', 'wrong', 'unattempted', 'correct', 'starred'].map((f) => (
                     <button
-                      key={f.id}
-                      onClick={() => setFilterMode(f.id)}
-                      className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition ${
-                        filterMode === f.id ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+                      key={f}
+                      onClick={() => setFilterMode(f)}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-semibold capitalize ${
+                        filterMode === f ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-slate-300'
                       }`}
                     >
-                      {f.label}
+                      {f === 'starred' ? '★ Starred' : f}
                     </button>
                   ))}
                 </div>
@@ -4442,7 +4732,6 @@ Include these exact 5 sections clearly formatted:
                   const isCorrect = uAns === q.correctIndex;
                   const isSkipped = uAns === undefined;
                   const isWrong = !isSkipped && !isCorrect;
-                  const isMarked = !!selectedAttempt.markedForReview?.[idx];
                   const qSpent = selectedAttempt.questionTimeSpent?.[idx] || 0;
                   const savedAiCoachNote = selectedAttempt.aiAnalysis?.[idx] || '';
                   const isAiLoading = !!aiLoadingMap[idx];
@@ -4450,7 +4739,6 @@ Include these exact 5 sections clearly formatted:
                   if (filterMode === 'wrong' && !isWrong) return null;
                   if (filterMode === 'unattempted' && !isSkipped) return null;
                   if (filterMode === 'correct' && !isCorrect) return null;
-                  if (filterMode === 'marked' && !isMarked) return null;
                   if (filterMode === 'starred' && !q.starred) return null;
 
                   const revPassage = getLocalizedPassageText(q, testLang);
@@ -4464,15 +4752,6 @@ Include these exact 5 sections clearly formatted:
                           <span className="px-2.5 py-1 rounded-lg bg-indigo-600 text-white text-xs font-extrabold">
                             Order #{idx + 1} ({q.customLabel || `Q.${idx + 1}`})
                           </span>
-                          <button
-                            onClick={() => toggleMarkForReviewInReview(idx)}
-                            className={`px-2.5 py-1 rounded-lg text-xs font-bold flex items-center gap-1 ${
-                              isMarked ? 'bg-purple-600 text-white' : 'bg-slate-800 text-purple-300'
-                            }`}
-                          >
-                            <Flag className="w-3 h-3" />
-                            {isMarked ? '🚩 Marked Review' : 'Mark Review'}
-                          </button>
                           <button
                             onClick={() => toggleStarInReview(idx)}
                             className={`px-2.5 py-1 rounded-lg text-xs font-bold ${
@@ -4634,9 +4913,6 @@ Include these exact 5 sections clearly formatted:
         })()}
       </main>
 
-      {/* ==================================================================== */}
-      {/* FOOTER WITH 4 MANDATORY LEGAL PAGES FOR PAYMENT GATEWAY APPROVAL     */}
-      {/* ==================================================================== */}
       <footer className="border-t border-slate-800/80 bg-slate-900/50 py-4 px-4 mt-8 print:hidden">
         <div className="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-3 text-xs text-slate-400">
           <div>
