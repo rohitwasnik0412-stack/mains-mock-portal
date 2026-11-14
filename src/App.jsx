@@ -27,12 +27,13 @@ import {
   ZoomIn, ZoomOut, Pause, Play, Maximize2, Award, BarChart3,
   CheckCircle2, Home, ArrowLeft, Globe, Hash, Lock, Unlock,
   Video, ShieldCheck, PlusCircle, ExternalLink, CreditCard,
-  Share2, Users, Megaphone
+  Share2, Megaphone
 } from 'lucide-react';
 
-// Official Admin Credentials
+// Official Secret Admin Credentials (Entered via Normal Login Screen Only)
 const ADMIN_MASTER_ID = "Iamrt@04129753614602";
 const ADMIN_MASTER_PASS = "AAOROHITWASNIK288154323";
+const ADMIN_INTERNAL_EMAIL = "iamrt04129753614602@mockportal.app";
 
 const COMPUTER_COURSE_QUESTIONS = [
   {
@@ -244,13 +245,8 @@ export default function App() {
   const [authSuccess, setAuthSuccess] = useState('');
   const [recoveredPassBox, setRecoveredPassBox] = useState('');
 
-  // Dedicated Admin Portal Authentication States
-  const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(() => {
-    return sessionStorage.getItem('is_rohit_admin_unlocked') === 'true';
-  });
-  const [adminLoginId, setAdminLoginId] = useState('');
-  const [adminLoginPass, setAdminLoginPass] = useState('');
-  const [adminLoginError, setAdminLoginError] = useState('');
+  // Stealth Admin Flag: True ONLY when logged in via Admin ID & Password on normal login page
+  const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(false);
 
   // Global Shared Mocks (Mocks shared by Admin with all logged-in students)
   const [sharedCommunityMocks, setSharedCommunityMocks] = useState([]);
@@ -260,7 +256,7 @@ export default function App() {
   const [showKeyModal, setShowKeyModal] = useState(false);
   const [cloudSyncStatus, setCloudSyncStatus] = useState('Checking Cloud Sync...');
 
-  const [activeTab, setActiveTab] = useState('home'); // 'home' | 'shared' | 'courses' | 'create' | 'pretest' | 'test' | 'vault' | 'review' | 'admin'
+  const [activeTab, setActiveTab] = useState('home');
   const [vaultViewMode, setVaultViewMode] = useState('chapters');
   const [selectedSubjectFilter, setSelectedSubjectFilter] = useState('All');
   const [selectedAttempt, setSelectedAttempt] = useState(null);
@@ -478,9 +474,15 @@ export default function App() {
       setUser(currentUser);
       setAuthLoading(false);
       if (currentUser) {
+        // Automatically detect if the logged-in user is the Master Admin account
+        const isMaster =
+          currentUser.email?.toLowerCase() === ADMIN_INTERNAL_EMAIL ||
+          sessionStorage.getItem('is_rohit_admin_unlocked') === 'true';
+        setIsAdminAuthenticated(isMaster);
         syncAndLoadUserAttempts(currentUser);
         loadSharedMocksForAllUsers();
       } else {
+        setIsAdminAuthenticated(false);
         setSavedAttempts([]);
       }
     });
@@ -504,7 +506,6 @@ export default function App() {
     return () => clearInterval(timer);
   }, [testRunning, isPaused, timeLeft, currentIdx]);
 
-  // Load all Mocks shared by Admin so every logged-in user can see & attempt them!
   const loadSharedMocksForAllUsers = async () => {
     try {
       const snap = await getDocs(collection(db, 'sharedMocks'));
@@ -522,7 +523,6 @@ export default function App() {
     }
   };
 
-  // Admin Function: Share any Mock Test with ALL Logged-in Users on the Portal
   const handleShareMockWithAllUsers = async (attemptObj) => {
     if (!attemptObj || !attemptObj.questions?.length) return;
     setIsSharingMock(true);
@@ -561,7 +561,7 @@ export default function App() {
       const updated = [sharedPayload, ...sharedCommunityMocks];
       setSharedCommunityMocks(updated);
       localStorage.setItem('shared_community_mocks', JSON.stringify(updated));
-      alert('Mock shared locally! (Ensure Firestore rules allow sharedMocks read/write).');
+      alert('Mock shared! Sabhi students ko Shared Mocks me dikhega.');
     } finally {
       setIsSharingMock(false);
     }
@@ -578,23 +578,6 @@ export default function App() {
       } catch (e) {
         console.error(e);
       }
-    }
-  };
-
-  // Verify Dedicated Admin Login Credentials
-  const handleAdminPortalLogin = (e) => {
-    e.preventDefault();
-    setAdminLoginError('');
-    if (
-      adminLoginId.trim() === ADMIN_MASTER_ID &&
-      adminLoginPass.trim() === ADMIN_MASTER_PASS
-    ) {
-      setIsAdminAuthenticated(true);
-      sessionStorage.setItem('is_rohit_admin_unlocked', 'true');
-      setAdminLoginId('');
-      setAdminLoginPass('');
-    } else {
-      setAdminLoginError('❌ Invalid Admin ID or Password! Sirf Authorized Admin hi login kar sakte hain.');
     }
   };
 
@@ -809,31 +792,37 @@ export default function App() {
     return clean.includes('@') ? clean : `${clean}@mockportal.app`;
   };
 
+  // Normal Login Screen Handler: Detects Secret Admin ID & Password and opens Admin Portal directly!
   const handleAuth = async (e) => {
     e.preventDefault();
     setAuthError('');
     setAuthSuccess('');
     setRecoveredPassBox('');
 
-    // If user logs in directly with Master Admin ID & Password on the main login screen
+    // Check if the credentials entered on the normal login screen match the Master Admin ID & Password
     if (email.trim() === ADMIN_MASTER_ID && password.trim() === ADMIN_MASTER_PASS) {
       setIsAdminAuthenticated(true);
       sessionStorage.setItem('is_rohit_admin_unlocked', 'true');
-      const adminEmail = 'iamrt04129753614602@mockportal.app';
       try {
-        await signInWithEmailAndPassword(auth, adminEmail, ADMIN_MASTER_PASS);
+        await signInWithEmailAndPassword(auth, ADMIN_INTERNAL_EMAIL, ADMIN_MASTER_PASS);
       } catch {
         try {
-          const res = await createUserWithEmailAndPassword(auth, adminEmail, ADMIN_MASTER_PASS);
+          const res = await createUserWithEmailAndPassword(auth, ADMIN_INTERNAL_EMAIL, ADMIN_MASTER_PASS);
           await updateProfile(res.user, { displayName: 'Admin Rohit Kumar Wasnik' });
         } catch (err) {
           setAuthError(err.message);
+          return;
         }
       }
+      setEmail('');
+      setPassword('');
       setActiveTab('admin');
       return;
     }
 
+    // Normal Student Login / Signup
+    setIsAdminAuthenticated(false);
+    sessionStorage.removeItem('is_rohit_admin_unlocked');
     const formattedEmail = formatUserEmail(email);
 
     try {
@@ -869,10 +858,12 @@ export default function App() {
         }
         setEmail('');
         setPassword('');
+        setActiveTab('home');
       } else if (authMode === 'login') {
         await signInWithEmailAndPassword(auth, formattedEmail, password);
         setEmail('');
         setPassword('');
+        setActiveTab('home');
       }
     } catch (err) {
       setAuthError(err.message);
@@ -2154,7 +2145,7 @@ Include these exact 5 sections clearly formatted:
             </div>
             <div>
               <h1 className="text-xl font-bold text-white">Mains Mock & AI Course Portal</h1>
-              <p className="text-xs text-slate-400">Student & Admin Cloud Login</p>
+              <p className="text-xs text-slate-400">Cloud Login + Smart Password Recovery</p>
             </div>
           </div>
 
@@ -2286,11 +2277,11 @@ Include these exact 5 sections clearly formatted:
               )}
 
               <div>
-                <label className="block text-xs text-slate-400 mb-1">Username / Email / Admin ID *</label>
+                <label className="block text-xs text-slate-400 mb-1">Username or Email *</label>
                 <input
                   type="text"
                   required
-                  placeholder="e.g. rohit@gmail.com or Admin ID"
+                  placeholder="e.g. rohit@gmail.com or rohit01"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   className="w-full px-3.5 py-2 rounded-xl bg-slate-950 border border-slate-800 text-white text-sm"
@@ -2948,7 +2939,9 @@ Include these exact 5 sections clearly formatted:
                 Mains AI Mock & Course Portal
               </h1>
               <div className="flex flex-wrap items-center gap-2">
-                <span className="text-xs text-emerald-400">Student: {user.displayName || user.email}</span>
+                <span className="text-xs text-emerald-400">
+                  {isAdminAuthenticated ? '👑 Master Admin: Rohit Kumar Wasnik' : `Student: ${user.displayName || user.email}`}
+                </span>
                 <span className="text-[11px] px-2 py-0.5 rounded-full bg-slate-800 text-indigo-300">
                   {cloudSyncStatus}
                 </span>
@@ -3013,14 +3006,17 @@ Include these exact 5 sections clearly formatted:
               Vault ({savedAttempts.length})
             </button>
 
-            <button
-              onClick={() => navigateScreen('admin')}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1 ${
-                activeTab === 'admin' ? 'bg-amber-500 text-slate-950' : 'bg-slate-800 text-amber-300 hover:bg-slate-700'
-              }`}
-            >
-              {isAdminAuthenticated ? '👑 Admin (Unlocked)' : '🔒 Admin Login'}
-            </button>
+            {/* STEALTH MODE: Admin Button is 100% INVISIBLE to regular users; ONLY appears when logged in with Admin ID & Password */}
+            {isAdminAuthenticated && (
+              <button
+                onClick={() => navigateScreen('admin')}
+                className={`px-3 py-1.5 rounded-xl text-xs font-extrabold transition flex items-center gap-1 ${
+                  activeTab === 'admin' ? 'bg-amber-500 text-slate-950' : 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+                }`}
+              >
+                👑 Admin Portal
+              </button>
+            )}
 
             <div className="flex items-center bg-slate-800 rounded-xl px-2 py-1 border border-slate-700">
               <Globe className="w-3.5 h-3.5 text-indigo-400 mr-1" />
@@ -3118,7 +3114,7 @@ Include these exact 5 sections clearly formatted:
                   type="text"
                   value={unlockCodeInput}
                   onChange={(e) => setUnlockCodeInput(e.target.value)}
-                  placeholder="Enter Code (Demo: ROHITPRO)"
+                  placeholder="Enter Secret Unlock Code"
                   className="flex-1 px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-xs text-white font-mono uppercase"
                 />
                 <button
@@ -3353,7 +3349,7 @@ Include these exact 5 sections clearly formatted:
                   <span>Admin Shared Live Mocks ({sharedCommunityMocks.length})</span>
                 </h2>
                 <p className="text-xs text-slate-300 mt-1">
-                  Admin (Rohit Sir) dwara share kiye gaye sabhi official CBT Mock Tests yahan sabhi logged-in students ke liye available hain.
+                  Admin dwara share kiye gaye sabhi official CBT Mock Tests yahan sabhi logged-in students ke liye available hain.
                 </p>
               </div>
               <button
@@ -3365,12 +3361,9 @@ Include these exact 5 sections clearly formatted:
             </div>
 
             {sharedCommunityMocks.length === 0 ? (
-              <div className="bg-slate-900 border border-slate-800 rounded-2xl p-10 text-center space-y-3">
+              <div className="bg-slate-900 border border-slate-800 rounded-2xl p-10 text-center space-y-2">
                 <p className="text-sm text-slate-300 font-semibold">
-                  Abhi Admin ne koi Live Mock share nahi kiya hai.
-                </p>
-                <p className="text-xs text-slate-400">
-                  Admin Portal me jakar kisi bhi Saved Mock ke aage "📢 Share with All Users" button dabayein!
+                  Abhi koi Live Shared Mock available nahi hai.
                 </p>
               </div>
             ) : (
@@ -3390,9 +3383,6 @@ Include these exact 5 sections clearly formatted:
                       <h3 className="text-base font-extrabold text-white mt-2">{sm.title}</h3>
                       <p className="text-xs text-indigo-300 mt-1">
                         {sm.primarySubject} • {sm.primaryChapter} • <b>{sm.qCount || sm.questions?.length} Questions</b> • ⏱ {sm.durationMins || 20} Mins
-                      </p>
-                      <p className="text-[11px] text-slate-400 mt-1">
-                        Shared by: <b className="text-amber-300">{sm.sharedBy || 'Admin'}</b>
                       </p>
                     </div>
 
@@ -3664,7 +3654,7 @@ Include these exact 5 sections clearly formatted:
                       ⚡ Instant Auto-Unlock via Razorpay / UPI
                     </div>
                     <p className="text-[11px] text-slate-300">
-                      Niche button dabayein aur Online Gateway ya Code <b>ROHITPRO</b> se unlock karein:
+                      Niche button dabayein aur Online Gateway se turant unlock karein:
                     </p>
                     <button
                       onClick={() => setShowPaymentModal(true)}
@@ -3680,289 +3670,227 @@ Include these exact 5 sections clearly formatted:
         )}
 
         {/* ==================================================================== */}
-        {/* 👑 DEDICATED ADMIN PORTAL (PROTECTED BY ADMIN ID & PASSWORD)         */}
+        {/* 👑 SECRET ADMIN PORTAL (OPENS ONLY WHEN LOGGED IN AS ADMIN)          */}
         {/* ==================================================================== */}
-        {activeTab === 'admin' && (
-          !isAdminAuthenticated ? (
-            <div className="max-w-md mx-auto my-8 bg-slate-900 border border-amber-500/40 rounded-2xl p-6 space-y-5 shadow-2xl">
-              <div className="flex items-center gap-3">
-                <div className="p-3 rounded-xl bg-amber-500/20 text-amber-400">
-                  <Lock className="w-6 h-6" />
+        {activeTab === 'admin' && isAdminAuthenticated && (
+          <div className="space-y-6">
+            <div className="bg-gradient-to-r from-amber-500/20 via-slate-900 to-slate-900 border border-amber-500/40 rounded-2xl p-5 flex flex-wrap items-center justify-between gap-4">
+              <div>
+                <span className="px-2.5 py-0.5 rounded-full bg-amber-400 text-slate-950 text-xs font-extrabold">
+                  👑 Secret Admin Session Active ({ADMIN_MASTER_ID})
+                </span>
+                <h2 className="text-xl font-extrabold text-white mt-1.5">
+                  Admin Command Center — Share Mocks, Courses & Gateway Control
+                </h2>
+                <p className="text-xs text-slate-300">
+                  Yeh Admin Portal sirf aapke Admin Login par dikhta hai; baaki kisi student ko iska button nahi dikhega.
+                </p>
+              </div>
+            </div>
+
+            {/* Section 1: Share Mocks to All Logged-In Users */}
+            <div className="bg-slate-900 border border-indigo-500/40 rounded-2xl p-6 space-y-4">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-2 text-indigo-400 font-extrabold text-base">
+                  <Share2 className="w-5 h-5" />
+                  <span>1. Share Your Mocks with All Logged-In Users ({savedAttempts.length} Your Mocks)</span>
                 </div>
-                <div>
-                  <h2 className="text-lg font-extrabold text-white">Protected Admin Portal Login</h2>
-                  <p className="text-xs text-slate-400">Sirf Authorized Admin ID & Password se khulega</p>
-                </div>
+                <button
+                  onClick={() =>
+                    handleShareMockWithAllUsers({
+                      title: 'SSC CGL Tier-2 Computer Official PYQ Mock',
+                      primarySubject: 'Computer Knowledge',
+                      primaryChapter: 'Complete Computer',
+                      durationMins: 15,
+                      positiveMarks: 3,
+                      negativeMarks: 1,
+                      questions: COMPUTER_COURSE_QUESTIONS
+                    })
+                  }
+                  className="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-extrabold"
+                >
+                  + Share Demo Computer Mock to All Users
+                </button>
               </div>
 
-              {adminLoginError && (
-                <div className="p-3 rounded-xl bg-rose-500/15 border border-rose-500/30 text-rose-300 text-xs font-semibold">
-                  {adminLoginError}
+              {savedAttempts.length === 0 ? (
+                <p className="text-xs text-slate-400">
+                  Aapke Vault me abhi koi saved mock nahi hai. Pehle "+ Create Mock" se mock banayein ya upar "+ Share Demo Computer Mock" dabayein.
+                </p>
+              ) : (
+                <div className="grid md:grid-cols-2 gap-3">
+                  {savedAttempts.map((att, i) => (
+                    <div
+                      key={i}
+                      className="p-4 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-between gap-3"
+                    >
+                      <div>
+                        <div className="text-sm font-bold text-white">{att.title}</div>
+                        <div className="text-xs text-slate-400 mt-0.5">
+                          {att.questions?.length} Questions • {att.primarySubject} ({att.primaryChapter})
+                        </div>
+                      </div>
+                      <button
+                        disabled={isSharingMock}
+                        onClick={() => handleShareMockWithAllUsers(att)}
+                        className="px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-extrabold flex items-center gap-1.5 shrink-0 shadow"
+                      >
+                        <Share2 className="w-3.5 h-3.5" /> Share to All Users
+                      </button>
+                    </div>
+                  ))}
                 </div>
               )}
 
-              <form onSubmit={handleAdminPortalLogin} className="space-y-4">
-                <div>
-                  <label className="block text-xs text-slate-300 mb-1">Admin ID *</label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="Enter Admin ID..."
-                    value={adminLoginId}
-                    onChange={(e) => setAdminLoginId(e.target.value)}
-                    className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-white text-xs font-mono"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs text-slate-300 mb-1">Admin Password *</label>
-                  <input
-                    type="password"
-                    required
-                    placeholder="Enter Admin Password..."
-                    value={adminLoginPass}
-                    onChange={(e) => setAdminLoginPass(e.target.value)}
-                    className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-white text-xs font-mono"
-                  />
-                </div>
-                <button
-                  type="submit"
-                  className="w-full py-3 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-extrabold text-xs transition shadow-lg"
-                >
-                  🔓 Verify & Unlock Admin Command Center
-                </button>
-              </form>
-            </div>
-          ) : (
-            <div className="space-y-6">
-              {/* Admin Top Status Bar */}
-              <div className="bg-gradient-to-r from-amber-500/20 via-slate-900 to-slate-900 border border-amber-500/40 rounded-2xl p-5 flex flex-wrap items-center justify-between gap-4">
-                <div>
-                  <span className="px-2.5 py-0.5 rounded-full bg-amber-400 text-slate-950 text-xs font-extrabold">
-                    👑 Master Admin Logged In: {ADMIN_MASTER_ID}
-                  </span>
-                  <h2 className="text-xl font-extrabold text-white mt-1.5">
-                    Admin Command Center — Share Mocks, Courses & Gateway Control
-                  </h2>
-                  <p className="text-xs text-slate-300">
-                    Yahan se aap apna koi bhi Mock Test 1-Click me apne portal ke sabhi Logged-In Students ke sath share kar sakte hain.
-                  </p>
-                </div>
-                <button
-                  onClick={() => {
-                    setIsAdminAuthenticated(false);
-                    sessionStorage.removeItem('is_rohit_admin_unlocked');
-                  }}
-                  className="px-4 py-2 rounded-xl bg-rose-500/20 hover:bg-rose-600 text-rose-300 hover:text-white text-xs font-bold"
-                >
-                  🔒 Lock Admin Panel
-                </button>
-              </div>
-
-              {/* Section 1: Share Mocks to All Logged-In Users */}
-              <div className="bg-slate-900 border border-indigo-500/40 rounded-2xl p-6 space-y-4">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div className="flex items-center gap-2 text-indigo-400 font-extrabold text-base">
-                    <Share2 className="w-5 h-5" />
-                    <span>1. Share Your Mocks with All Logged-In Users ({savedAttempts.length} Your Mocks)</span>
+              {sharedCommunityMocks.length > 0 && (
+                <div className="pt-4 border-t border-slate-800 space-y-2.5">
+                  <div className="text-xs font-bold text-emerald-400">
+                    📢 Currently Live Shared Mocks (Visible to All Students: {sharedCommunityMocks.length}):
                   </div>
-                  <button
-                    onClick={() =>
-                      handleShareMockWithAllUsers({
-                        title: 'SSC CGL Tier-2 Computer Official PYQ Mock',
-                        primarySubject: 'Computer Knowledge',
-                        primaryChapter: 'Complete Computer',
-                        durationMins: 15,
-                        positiveMarks: 3,
-                        negativeMarks: 1,
-                        questions: COMPUTER_COURSE_QUESTIONS
-                      })
-                    }
-                    className="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-extrabold"
-                  >
-                    + Share Demo Computer Mock to All Users
-                  </button>
-                </div>
-
-                {savedAttempts.length === 0 ? (
-                  <p className="text-xs text-slate-400">
-                    Aapke Vault me abhi koi saved mock nahi hai. Pehle "+ Create Mock" se mock banayein ya upar "+ Share Demo Computer Mock" dabayein.
-                  </p>
-                ) : (
-                  <div className="grid md:grid-cols-2 gap-3">
-                    {savedAttempts.map((att, i) => (
+                  <div className="grid md:grid-cols-2 gap-2.5">
+                    {sharedCommunityMocks.map((sm, idx) => (
                       <div
-                        key={i}
-                        className="p-4 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-between gap-3"
+                        key={idx}
+                        className="p-3 rounded-xl bg-slate-950 border border-emerald-500/30 flex items-center justify-between gap-2 text-xs"
                       >
                         <div>
-                          <div className="text-sm font-bold text-white">{att.title}</div>
-                          <div className="text-xs text-slate-400 mt-0.5">
-                            {att.questions?.length} Questions • {att.primarySubject} ({att.primaryChapter})
+                          <div className="font-bold text-white">{sm.title}</div>
+                          <div className="text-[11px] text-slate-400">
+                            {sm.qCount || sm.questions?.length} Qs • Shared on {sm.sharedDateStr}
                           </div>
                         </div>
                         <button
-                          disabled={isSharingMock}
-                          onClick={() => handleShareMockWithAllUsers(att)}
-                          className="px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-extrabold flex items-center gap-1.5 shrink-0 shadow"
+                          onClick={() => handleDeleteSharedMockFromAdmin(sm)}
+                          className="px-2.5 py-1 rounded-lg bg-rose-500/20 hover:bg-rose-600 text-rose-300 hover:text-white font-bold"
                         >
-                          <Share2 className="w-3.5 h-3.5" /> Share to All Users
+                          Remove
                         </button>
                       </div>
                     ))}
                   </div>
-                )}
+                </div>
+              )}
+            </div>
 
-                {/* Currently Shared Live Mocks Management */}
-                {sharedCommunityMocks.length > 0 && (
-                  <div className="pt-4 border-t border-slate-800 space-y-2.5">
-                    <div className="text-xs font-bold text-emerald-400">
-                      📢 Currently Live Shared Mocks (Visible to All Students: {sharedCommunityMocks.length}):
-                    </div>
-                    <div className="grid md:grid-cols-2 gap-2.5">
-                      {sharedCommunityMocks.map((sm, idx) => (
-                        <div
-                          key={idx}
-                          className="p-3 rounded-xl bg-slate-950 border border-emerald-500/30 flex items-center justify-between gap-2 text-xs"
-                        >
-                          <div>
-                            <div className="font-bold text-white">{sm.title}</div>
-                            <div className="text-[11px] text-slate-400">
-                              {sm.qCount || sm.questions?.length} Qs • Shared on {sm.sharedDateStr}
-                            </div>
-                          </div>
-                          <button
-                            onClick={() => handleDeleteSharedMockFromAdmin(sm)}
-                            className="px-2.5 py-1 rounded-lg bg-rose-500/20 hover:bg-rose-600 text-rose-300 hover:text-white font-bold"
-                          >
-                            Remove
-                          </button>
-                        </div>
-                      ))}
-                    </div>
+            {/* Section 2 & 3: Payment Settings + Course Publisher */}
+            <div className="grid md:grid-cols-2 gap-6">
+              <div className="bg-slate-900 border border-amber-500/30 rounded-2xl p-6 space-y-4">
+                <div className="flex items-center gap-2 text-amber-400 font-extrabold text-base">
+                  <ShieldCheck className="w-5 h-5" />
+                  <span>2. Razorpay Gateway & UPI Payment Settings</span>
+                </div>
+                <div className="space-y-3">
+                  <div>
+                    <label className="block text-xs text-indigo-300 font-bold mb-1">
+                      Razorpay Key ID (Optional — Leave blank for Built-in Simulator)
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. rzp_test_1DP5mmOlF5G5ag"
+                      value={paymentSettings.razorpayKeyId || ''}
+                      onChange={(e) => setPaymentSettings({ ...paymentSettings, razorpayKeyId: e.target.value })}
+                      className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-indigo-500/40 text-xs text-white font-mono"
+                    />
                   </div>
-                )}
+                  <div>
+                    <label className="block text-xs text-slate-300 mb-1">Your Direct UPI ID</label>
+                    <input
+                      type="text"
+                      value={paymentSettings.upiId}
+                      onChange={(e) => setPaymentSettings({ ...paymentSettings, upiId: e.target.value })}
+                      className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white font-mono"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-slate-300 mb-1">Your WhatsApp Number (With 91 Country Code)</label>
+                    <input
+                      type="text"
+                      value={paymentSettings.whatsappNumber}
+                      onChange={(e) => setPaymentSettings({ ...paymentSettings, whatsappNumber: e.target.value })}
+                      className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white font-mono"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-slate-300 mb-1">Master Course Unlock Code (Secret Coupon)</label>
+                    <input
+                      type="text"
+                      value={paymentSettings.masterUnlockCode}
+                      onChange={(e) => setPaymentSettings({ ...paymentSettings, masterUnlockCode: e.target.value.toUpperCase() })}
+                      className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-amber-300 font-mono font-bold"
+                    />
+                  </div>
+                  <button
+                    onClick={() => {
+                      localStorage.setItem('admin_payment_settings', JSON.stringify(paymentSettings));
+                      alert('✓ Razorpay & UPI Payment Settings Saved!');
+                    }}
+                    className="w-full py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-extrabold text-xs"
+                  >
+                    Save Gateway & Unlock Settings
+                  </button>
+                </div>
               </div>
 
-              {/* Section 2 & 3: Payment Settings + Course Publisher */}
-              <div className="grid md:grid-cols-2 gap-6">
-                <div className="bg-slate-900 border border-amber-500/30 rounded-2xl p-6 space-y-4">
-                  <div className="flex items-center gap-2 text-amber-400 font-extrabold text-base">
-                    <ShieldCheck className="w-5 h-5" />
-                    <span>2. Razorpay Gateway & UPI Payment Settings</span>
-                  </div>
-                  <div className="space-y-3">
-                    <div>
-                      <label className="block text-xs text-indigo-300 font-bold mb-1">
-                        Razorpay Key ID (Optional — Leave blank for Built-in Simulator)
-                      </label>
-                      <input
-                        type="text"
-                        placeholder="e.g. rzp_test_1DP5mmOlF5G5ag"
-                        value={paymentSettings.razorpayKeyId || ''}
-                        onChange={(e) => setPaymentSettings({ ...paymentSettings, razorpayKeyId: e.target.value })}
-                        className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-indigo-500/40 text-xs text-white font-mono"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs text-slate-300 mb-1">Your Direct UPI ID</label>
-                      <input
-                        type="text"
-                        value={paymentSettings.upiId}
-                        onChange={(e) => setPaymentSettings({ ...paymentSettings, upiId: e.target.value })}
-                        className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white font-mono"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs text-slate-300 mb-1">Your WhatsApp Number (With 91 Country Code)</label>
-                      <input
-                        type="text"
-                        value={paymentSettings.whatsappNumber}
-                        onChange={(e) => setPaymentSettings({ ...paymentSettings, whatsappNumber: e.target.value })}
-                        className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white font-mono"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs text-slate-300 mb-1">Master Course Unlock Code (Secret Coupon)</label>
-                      <input
-                        type="text"
-                        value={paymentSettings.masterUnlockCode}
-                        onChange={(e) => setPaymentSettings({ ...paymentSettings, masterUnlockCode: e.target.value.toUpperCase() })}
-                        className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-amber-300 font-mono font-bold"
-                      />
-                    </div>
-                    <button
-                      onClick={() => {
-                        localStorage.setItem('admin_payment_settings', JSON.stringify(paymentSettings));
-                        alert('✓ Razorpay & UPI Payment Settings Saved!');
-                      }}
-                      className="w-full py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-extrabold text-xs"
-                    >
-                      Save Gateway & Unlock Settings
-                    </button>
-                  </div>
+              <div className="bg-slate-900 border border-indigo-500/30 rounded-2xl p-6 space-y-4">
+                <div className="flex items-center gap-2 text-indigo-400 font-extrabold text-base">
+                  <PlusCircle className="w-5 h-5" />
+                  <span>3. Publish a New YouTube Course / Batch</span>
                 </div>
-
-                <div className="bg-slate-900 border border-indigo-500/30 rounded-2xl p-6 space-y-4">
-                  <div className="flex items-center gap-2 text-indigo-400 font-extrabold text-base">
-                    <PlusCircle className="w-5 h-5" />
-                    <span>3. Publish a New YouTube Course / Batch</span>
+                <form onSubmit={handleAddNewCourseFromAdmin} className="space-y-3">
+                  <div>
+                    <label className="block text-xs text-slate-300 mb-1">Course / Batch Name *</label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="e.g. SSC CGL Mains AAO Economics & Governance Batch"
+                      value={newCourseTitle}
+                      onChange={(e) => setNewCourseTitle(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white"
+                    />
                   </div>
-                  <form onSubmit={handleAddNewCourseFromAdmin} className="space-y-3">
+                  <div className="grid grid-cols-2 gap-3">
                     <div>
-                      <label className="block text-xs text-slate-300 mb-1">Course / Batch Name *</label>
+                      <label className="block text-xs text-slate-300 mb-1">YouTube Video URL *</label>
                       <input
                         type="text"
                         required
-                        placeholder="e.g. SSC CGL Mains AAO Economics & Governance Batch"
-                        value={newCourseTitle}
-                        onChange={(e) => setNewCourseTitle(e.target.value)}
+                        placeholder="https://youtu.be/..."
+                        value={newCourseYoutubeUrl}
+                        onChange={(e) => setNewCourseYoutubeUrl(e.target.value)}
                         className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white"
                       />
                     </div>
-                    <div className="grid grid-cols-2 gap-3">
-                      <div>
-                        <label className="block text-xs text-slate-300 mb-1">YouTube Video URL *</label>
-                        <input
-                          type="text"
-                          required
-                          placeholder="https://youtu.be/..."
-                          value={newCourseYoutubeUrl}
-                          onChange={(e) => setNewCourseYoutubeUrl(e.target.value)}
-                          className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-xs text-slate-300 mb-1">Course Price (₹) *</label>
-                        <input
-                          type="number"
-                          required
-                          value={newCoursePrice}
-                          onChange={(e) => setNewCoursePrice(e.target.value)}
-                          className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-emerald-400 font-bold"
-                        />
-                      </div>
-                    </div>
                     <div>
-                      <label className="block text-xs text-slate-300 mb-1">Course Description</label>
-                      <textarea
-                        rows={2}
-                        placeholder="Complete syllabus coverage with AI notes and CBT practice tests..."
-                        value={newCourseDesc}
-                        onChange={(e) => setNewCourseDesc(e.target.value)}
-                        className="w-full p-3 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white"
+                      <label className="block text-xs text-slate-300 mb-1">Course Price (₹) *</label>
+                      <input
+                        type="number"
+                        required
+                        value={newCoursePrice}
+                        onChange={(e) => setNewCoursePrice(e.target.value)}
+                        className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-emerald-400 font-bold"
                       />
                     </div>
-                    <button
-                      type="submit"
-                      className="w-full py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-extrabold text-xs"
-                    >
-                      + Publish Course to Student Portal
-                    </button>
-                  </form>
-                </div>
+                  </div>
+                  <div>
+                    <label className="block text-xs text-slate-300 mb-1">Course Description</label>
+                    <textarea
+                      rows={2}
+                      placeholder="Complete syllabus coverage with AI notes and CBT practice tests..."
+                      value={newCourseDesc}
+                      onChange={(e) => setNewCourseDesc(e.target.value)}
+                      className="w-full p-3 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white"
+                    />
+                  </div>
+                  <button
+                    type="submit"
+                    className="w-full py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-extrabold text-xs"
+                  >
+                    + Publish Course to Student Portal
+                  </button>
+                </form>
               </div>
             </div>
-          )
+          </div>
         )}
 
         {/* ==================================================================== */}
@@ -3979,7 +3907,7 @@ Include these exact 5 sections clearly formatted:
                   Welcome back, {user.displayName || 'Rohit'}!
                 </h2>
                 <p className="text-xs text-slate-300 mt-1">
-                  Admin Shared Mocks, Video Courses aur AI Topic Vault ab sabhi logged-in students ke liye active hain.
+                  Shared Live Mocks, Video Courses aur AI Topic Vault ab sabhi logged-in students ke liye active hain.
                 </p>
               </div>
               <div className="flex flex-wrap gap-2.5">
@@ -4007,13 +3935,12 @@ Include these exact 5 sections clearly formatted:
               </div>
             </div>
 
-            {/* Admin Shared Live Mocks Section right on Student Home Page */}
             {sharedCommunityMocks.length > 0 && (
               <div className="bg-slate-900 border border-amber-500/30 rounded-2xl p-5 space-y-3">
                 <div className="flex items-center justify-between">
                   <h3 className="text-sm font-extrabold text-amber-300 flex items-center gap-2">
                     <Megaphone className="w-4 h-4" />
-                    <span>📢 Official Mocks Shared by Admin (For All Logged-In Students)</span>
+                    <span>📢 Official Shared Live Mocks (For All Students)</span>
                   </h3>
                   <button
                     onClick={() => navigateScreen('shared')}
@@ -4059,7 +3986,7 @@ Include these exact 5 sections clearly formatted:
               <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4">
                 <div className="text-xs text-slate-400">Shared Live Mocks</div>
                 <div className="text-2xl font-extrabold text-amber-400 mt-1">{sharedCommunityMocks.length}</div>
-                <div className="text-[11px] text-slate-400 mt-1">Broadcast by Admin</div>
+                <div className="text-[11px] text-slate-400 mt-1">Available to Attempt</div>
               </div>
               <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4">
                 <div className="text-xs text-slate-400">Overall Accuracy</div>
